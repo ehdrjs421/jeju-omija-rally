@@ -1,17 +1,20 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Trophy, MapPin, QrCode, LogOut, CheckCircle2, Circle } from 'lucide-react';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Trophy, MapPin, QrCode, LogOut, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { handleCheckIn } from '@/app/actions/checkin';
 
-export default function Dashboard() {
+// 🚀 클라이언트 컴포넌트에서 searchParams를 안전하게 사용하기 위해 분리
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [lapCount, setLapCount] = useState(0);
-  // 현재 위치 상태 (가장 최근에 찍은 지점 저장)
   const [currentStep, setCurrentStep] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('omija_user');
@@ -30,31 +33,61 @@ export default function Dashboard() {
         .eq('user_id', parsedUser.id);
       setLapCount(count || 0);
 
-      // 2. 🚀 [핵심 수정] 가장 마지막에 찍힌 스탬프 1개만 가져오기
-      const { data: latestStamps, error } = await supabase
+      // 2. 가장 마지막에 찍힌 스탬프 확인
+      const { data: latestStamps } = await supabase
         .from('stamps')
         .select('checkpoint_id')
         .eq('user_id', parsedUser.id)
-        .order('created_at', { ascending: false }) // 최신순 정렬
-        .limit(1); // 1개만
+        .order('created_at', { ascending: false })
+        .limit(1);
 
       if (latestStamps && latestStamps.length > 0) {
-        const lastPoint = latestStamps[0].checkpoint_id.toUpperCase().trim();
-        setCurrentStep(lastPoint);
+        setCurrentStep(latestStamps[0].checkpoint_id.toUpperCase().trim());
+      }
+    };
+
+    // 🚀 [핵심 추가] URL에 point 파라미터가 있는 경우 (QR 스캔 후 복귀 시)
+    const processCheckIn = async () => {
+      const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+      
+      if (point && !isProcessing) {
+        setIsProcessing(true);
+        
+        // 서버 액션으로 순서 검증
+        const result = await handleCheckIn(point);
+        
+        if (result.success) {
+          // 검증 통과 시 DB 저장 (GPS 정보는 필요시 추가 가능)
+          const { error: dbError } = await supabase.from('stamps').insert({
+            user_id: parsedUser.id,
+            checkpoint_id: point,
+          });
+
+          if (!dbError) {
+            alert(`${point} 지점 인증 성공!`);
+            // URL 파라미터 제거 (중복 방지)
+            window.history.replaceState({}, '', '/rally');
+            fetchStatus(); // 상태 새로고침
+          }
+        } else {
+          alert(result.message); // "순서가 틀렸습니다" 등 에러 메시지
+          window.history.replaceState({}, '', '/rally');
+        }
+        setIsProcessing(false);
       }
     };
 
     fetchStatus();
+    processCheckIn();
     
-    // 실시간성 보장을 위해 5초마다 갱신하거나, 필요 시 이 로직 유지
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, [router]);
+  }, [router, searchParams]);
 
   if (!user) return null;
 
-  // 진행 상태에 따른 메시지 결정
   const getStatusMessage = () => {
+    if (isProcessing) return "인증 정보를 처리 중입니다...";
     if (currentStep === 'FINISH') return "방금 완주했습니다! 새로운 바퀴를 시작하세요.";
     if (currentStep === 'MID') return "정상을 통과했습니다! 하산 지점으로 이동하세요.";
     if (currentStep === 'START') return "출발했습니다! 정상을 향해 달리세요!";
@@ -62,7 +95,7 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-50 pb-24 font-sans">
+    <main className="min-h-screen bg-zinc-50 pb-24 font-sans text-zinc-900">
       <div className="bg-[#D32F2F] p-8 text-white rounded-b-[2.5rem] shadow-lg">
         <div className="flex justify-between items-center mb-6 text-sm opacity-80 font-medium">
           <span>2026 제주들불축제</span>
@@ -71,18 +104,17 @@ export default function Dashboard() {
           </button>
         </div>
         <h1 className="text-3xl font-black mb-1 italic">{user.name}님,</h1>
-        <p className="text-lg opacity-90 leading-tight">{getStatusMessage()}</p>
+        <p className="text-lg opacity-90 leading-tight flex items-center gap-2">
+          {isProcessing && <Loader2 size={18} className="animate-spin" />}
+          {getStatusMessage()}
+        </p>
       </div>
 
       <div className="p-6 space-y-4 -mt-8">
-        {/* 실시간 진행 상황 스태퍼 */}
         <div className="bg-white p-8 rounded-[2rem] shadow-md border border-zinc-100">
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
-            {/* 배경 연결 선 */}
             <div className="absolute top-[16px] left-10 right-10 h-1 bg-zinc-100 z-0"></div>
-            
-            {/* 활성화된 연결 선 (상태에 따른 게이지) */}
             <div 
               className="absolute top-[16px] left-10 h-1 bg-red-500 z-0 transition-all duration-700 ease-in-out"
               style={{ 
@@ -90,27 +122,27 @@ export default function Dashboard() {
               }}
             ></div>
 
-            {/* 지점 1: START */}
+            {/* START 지점 */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
-                {(currentStep === 'START' || currentStep === 'MID' || currentStep === 'FINISH')
+                {['START', 'MID', 'FINISH'].includes(currentStep || '')
                   ? <CheckCircle2 className="text-red-500" size={32} fill="white" /> 
                   : <Circle className="text-zinc-200" size={32} />}
               </div>
               <span className={`text-[11px] font-black uppercase ${currentStep ? 'text-red-600' : 'text-zinc-300'}`}>Start</span>
             </div>
 
-            {/* 지점 2: MID */}
+            {/* MID 지점 */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
-                {(currentStep === 'MID' || currentStep === 'FINISH')
+                {['MID', 'FINISH'].includes(currentStep || '')
                   ? <CheckCircle2 className="text-red-500" size={32} fill="white" /> 
                   : <Circle className="text-zinc-200" size={32} />}
               </div>
-              <span className={`text-[11px] font-black uppercase ${ (currentStep === 'MID' || currentStep === 'FINISH') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
+              <span className={`text-[11px] font-black uppercase ${['MID', 'FINISH'].includes(currentStep || '') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
             </div>
 
-            {/* 지점 3: FINISH */}
+            {/* FINISH 지점 */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {currentStep === 'FINISH'
@@ -122,7 +154,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 완주 횟수 & 랭킹 버튼 (기존 동일) */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100 text-center">
             <p className="text-[10px] text-zinc-400 font-black mb-1 uppercase tracking-widest">Total Laps</p>
@@ -144,5 +175,14 @@ export default function Dashboard() {
         </button>
       </div>
     </main>
+  );
+}
+
+// 🚀 Next.js의 useSearchParams는 Suspense로 감싸야 빌드 에러가 나지 않습니다.
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }
