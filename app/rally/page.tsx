@@ -47,45 +47,55 @@ function DashboardContent() {
     setUser(parsedUser);
 
     const processCheckIn = async () => {
-      const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+  const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+  
+  if (point && !isProcessing && parsedUser.id) {
+    setIsProcessing(true);
+
+    try {
+      const result = await handleCheckIn(point, parsedUser.id);
       
-      // 파라미터가 있고, 현재 처리 중이 아니며, 유저 ID가 있을 때 실행
-      if (point && !isProcessing && parsedUser.id) {
-        setIsProcessing(true);
+      if (result.success) {
+        // 1. 현재 지점 스탬프 찍기
+        const { error: dbError } = await supabase.from('stamps').insert({
+          user_id: parsedUser.id,
+          checkpoint_id: point,
+        });
 
-        try {
-          // 🚀 수정: handleCheckIn 호출 시 parsedUser.id를 함께 전달합니다.
-          const result = await handleCheckIn(point, parsedUser.id);
-          
-          if (result.success) {
-            // 검증 통과 시 stamps 테이블에 최종 기록
-            const { error: dbError } = await supabase.from('stamps').insert({
+        if (!dbError) {
+          // 2. 만약 FINISH 지점이라면 laps 테이블에 완주 기록 추가
+          if (result.isFinish) {
+            const { error: lapError } = await supabase.from('laps').insert({
               user_id: parsedUser.id,
-              checkpoint_id: point,
+              // 필요하다면 여기서 어떤 코스인지 코스 ID 등을 추가할 수 있습니다.
             });
-
-            if (!dbError) {
-              // 주소창 파라미터 제거 (중복 실행 방지)
-              window.history.replaceState({}, '', '/rally');
-              // 화면 즉시 갱신
-              await fetchStatus(parsedUser.id);
-              alert(`${point} 지점 인증 성공!`);
-            } else {
-              console.error("DB 저장 오류:", dbError);
-              alert("인증 기록 저장 중 오류가 발생했습니다.");
+            
+            if (!lapError) {
+              console.log("완주 기록 저장 완료!");
             }
-          } else {
-            // 순서가 안 맞거나 이미 진행 중인 경우 (결과 메시지 출력)
-            alert(result.message);
-            window.history.replaceState({}, '', '/rally');
           }
-        } catch (err) {
-          console.error("인증 처리 중 예외 발생:", err);
-        } finally {
-          setIsProcessing(false);
+
+          // 주소창 파라미터 제거 및 상태 갱신
+          window.history.replaceState({}, '', '/rally');
+          await fetchStatus(parsedUser.id);
+          
+          if (result.isFinish) {
+            alert("🎊 축하합니다! 완주하셨습니다! 🎊");
+          } else {
+            alert(`${point} 지점 인증 성공!`);
+          }
         }
+      } else {
+        alert(result.message);
+        window.history.replaceState({}, '', '/rally');
       }
-    };
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+};
 
     fetchStatus(parsedUser.id);
     processCheckIn();

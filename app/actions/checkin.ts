@@ -3,14 +3,12 @@
 
 import { createClient } from '@/utils/supabase/server'
 
-// userId를 인자로 받도록 수정합니다.
 export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: string) {
   const supabase = await createClient()
 
-  // 1. 유저 ID가 없으면 차단
   if (!userId) return { success: false, message: '유저 정보가 유효하지 않습니다.' }
 
-  // 2. 해당 유저의 가장 최신 스탬프 기록 가져오기
+  // 최신 스탬프 1개 가져오기
   const { data: lastCheckIn } = await supabase
     .from('stamps')
     .select('checkpoint_id')
@@ -21,10 +19,11 @@ export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: s
 
   const lastPoint = lastCheckIn?.checkpoint_id?.toUpperCase();
 
-  // 3. 순서 검증 로직 (기존과 동일)
+  // 🏁 순서 검증 로직
   if (point === 'START') {
+    // 마지막 지점이 FINISH였거나, 아예 기록이 없을 때만 START 가능
     if (lastPoint && lastPoint !== 'FINISH') {
-      return { success: false, message: '이미 랠리를 진행 중입니다.' }
+      return { success: false, message: '이미 랠리가 시작되었습니다. 다음 지점으로 이동하세요!' }
     }
   } 
   else if (point === 'MID') {
@@ -34,9 +33,11 @@ export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: s
   } 
   else if (point === 'FINISH') {
     if (lastPoint !== 'MID') {
-      return { success: false, message: 'MID 지점을 먼저 인증해야 합니다!' }
+      return { success: false, message: 'MID(정상) 지점을 먼저 인증해야 합니다!' }
     }
+    // FINISH인 경우, 완주 처리 대상임을 알림
+    return { success: true, message: '완주를 축하합니다!', isFinish: true }
   }
 
-  return { success: true, message: '인증 가능합니다.' }
+  return { success: true, message: '인증 가능합니다.', isFinish: false }
 }
