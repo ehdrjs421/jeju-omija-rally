@@ -1,5 +1,7 @@
 'use client';
 export const runtime = 'edge';
+export const fetchCache = 'force-no-store';
+export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
