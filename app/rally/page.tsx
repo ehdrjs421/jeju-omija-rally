@@ -3,11 +3,10 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Trophy, MapPin, QrCode, LogOut, CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import { Trophy, QrCode, LogOut, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleCheckIn } from '@/app/actions/checkin';
 
-// 🚀 클라이언트 컴포넌트에서 searchParams를 안전하게 사용하기 위해 분리
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,6 +14,28 @@ function DashboardContent() {
   const [lapCount, setLapCount] = useState(0);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // 상태를 가져오는 공통 함수
+  const fetchStatus = async (userId: string) => {
+    // 1. 전체 완주 횟수 (laps 테이블)
+    const { count } = await supabase
+      .from('laps')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    setLapCount(count || 0);
+
+    // 2. 가장 최근에 찍힌 스탬프 확인 (stamps 테이블)
+    const { data: latestStamps } = await supabase
+      .from('stamps')
+      .select('checkpoint_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (latestStamps && latestStamps.length > 0) {
+      setCurrentStep(latestStamps[0].checkpoint_id.toUpperCase().trim());
+    }
+  };
 
   useEffect(() => {
     const savedUser = localStorage.getItem('omija_user');
@@ -25,64 +46,54 @@ function DashboardContent() {
     const parsedUser = JSON.parse(savedUser);
     setUser(parsedUser);
 
-    const fetchStatus = async () => {
-      // 1. 전체 완주 횟수 가져오기
-      const { count } = await supabase
-        .from('laps')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', parsedUser.id);
-      setLapCount(count || 0);
-
-      // 2. 가장 마지막에 찍힌 스탬프 확인
-      const { data: latestStamps } = await supabase
-        .from('stamps')
-        .select('checkpoint_id')
-        .eq('user_id', parsedUser.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (latestStamps && latestStamps.length > 0) {
-        setCurrentStep(latestStamps[0].checkpoint_id.toUpperCase().trim());
-      }
-    };
-
-    // 🚀 [핵심 추가] URL에 point 파라미터가 있는 경우 (QR 스캔 후 복귀 시)
     const processCheckIn = async () => {
       const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
       
-      if (point && !isProcessing) {
+      // 파라미터가 있고, 현재 처리 중이 아니며, 유저 ID가 있을 때 실행
+      if (point && !isProcessing && parsedUser.id) {
         setIsProcessing(true);
-        
-        // 서버 액션으로 순서 검증
-        const result = await handleCheckIn(point);
-        
-        if (result.success) {
-          // 검증 통과 시 DB 저장 (GPS 정보는 필요시 추가 가능)
-          const { error: dbError } = await supabase.from('stamps').insert({
-            user_id: parsedUser.id,
-            checkpoint_id: point,
-          });
 
-          if (!dbError) {
-            alert(`${point} 지점 인증 성공!`);
-            // URL 파라미터 제거 (중복 방지)
+        try {
+          // 🚀 수정: handleCheckIn 호출 시 parsedUser.id를 함께 전달합니다.
+          const result = await handleCheckIn(point, parsedUser.id);
+          
+          if (result.success) {
+            // 검증 통과 시 stamps 테이블에 최종 기록
+            const { error: dbError } = await supabase.from('stamps').insert({
+              user_id: parsedUser.id,
+              checkpoint_id: point,
+            });
+
+            if (!dbError) {
+              // 주소창 파라미터 제거 (중복 실행 방지)
+              window.history.replaceState({}, '', '/rally');
+              // 화면 즉시 갱신
+              await fetchStatus(parsedUser.id);
+              alert(`${point} 지점 인증 성공!`);
+            } else {
+              console.error("DB 저장 오류:", dbError);
+              alert("인증 기록 저장 중 오류가 발생했습니다.");
+            }
+          } else {
+            // 순서가 안 맞거나 이미 진행 중인 경우 (결과 메시지 출력)
+            alert(result.message);
             window.history.replaceState({}, '', '/rally');
-            fetchStatus(); // 상태 새로고침
           }
-        } else {
-          alert(result.message); // "순서가 틀렸습니다" 등 에러 메시지
-          window.history.replaceState({}, '', '/rally');
+        } catch (err) {
+          console.error("인증 처리 중 예외 발생:", err);
+        } finally {
+          setIsProcessing(false);
         }
-        setIsProcessing(false);
       }
     };
 
-    fetchStatus();
+    fetchStatus(parsedUser.id);
     processCheckIn();
     
-    const interval = setInterval(fetchStatus, 5000);
+    // 실시간 업데이트 (5초 주기)
+    const interval = setInterval(() => fetchStatus(parsedUser.id), 5000);
     return () => clearInterval(interval);
-  }, [router, searchParams]);
+  }, [searchParams]); // URL 파라미터가 바뀔 때마다 재실행
 
   if (!user) return null;
 
@@ -115,14 +126,16 @@ function DashboardContent() {
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
             <div className="absolute top-[16px] left-10 right-10 h-1 bg-zinc-100 z-0"></div>
+            
+            {/* 게이지 바 */}
             <div 
               className="absolute top-[16px] left-10 h-1 bg-red-500 z-0 transition-all duration-700 ease-in-out"
               style={{ 
-                width: currentStep === 'FINISH' ? 'calc(100% - 80px)' : currentStep === 'MID' ? '50%' : '0%' 
+                width: currentStep === 'FINISH' ? 'calc(100% - 80px)' : currentStep === 'MID' ? '50%' : currentStep === 'START' ? '0%' : '0%' 
               }}
             ></div>
 
-            {/* START 지점 */}
+            {/* 지점 1: START */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['START', 'MID', 'FINISH'].includes(currentStep || '')
@@ -132,7 +145,7 @@ function DashboardContent() {
               <span className={`text-[11px] font-black uppercase ${currentStep ? 'text-red-600' : 'text-zinc-300'}`}>Start</span>
             </div>
 
-            {/* MID 지점 */}
+            {/* 지점 2: MID */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['MID', 'FINISH'].includes(currentStep || '')
@@ -142,7 +155,7 @@ function DashboardContent() {
               <span className={`text-[11px] font-black uppercase ${['MID', 'FINISH'].includes(currentStep || '') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
             </div>
 
-            {/* FINISH 지점 */}
+            {/* 지점 3: FINISH */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {currentStep === 'FINISH'
@@ -178,10 +191,9 @@ function DashboardContent() {
   );
 }
 
-// 🚀 Next.js의 useSearchParams는 Suspense로 감싸야 빌드 에러가 나지 않습니다.
 export default function Dashboard() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white font-sans">오미자 랠리 불러오는 중...</div>}>
       <DashboardContent />
     </Suspense>
   );
