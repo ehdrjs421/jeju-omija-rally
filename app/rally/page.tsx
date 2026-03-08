@@ -15,17 +15,17 @@ function DashboardContent() {
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 1. 상태 동기화 함수 (DB에서 최신 정보 가져오기)
+  // 1. 데이터 새로고침 함수 (Laps 수와 현재 단계 갱신)
   const fetchStatus = async (userId: string) => {
     try {
-      // 전체 완주 횟수 (laps 테이블)
+      // 전체 완주 횟수 가져오기
       const { count } = await supabase
         .from('laps')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
       setLapCount(count || 0);
 
-      // 마지막 스탬프 확인 (stamps 테이블)
+      // 마지막 스탬프 확인
       const { data: latestStamps } = await supabase
         .from('stamps')
         .select('checkpoint_id')
@@ -39,7 +39,7 @@ function DashboardContent() {
         setCurrentStep(null);
       }
     } catch (err) {
-      console.error("데이터 로드 실패:", err);
+      console.error("데이터 로드 중 오류:", err);
     }
   };
 
@@ -55,16 +55,16 @@ function DashboardContent() {
     const processCheckIn = async () => {
       const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
       
-      // 파라미터가 있고 처리 중이 아닐 때만 실행
+      // 파라미터가 있고 처리 중이 아닐 때 실행
       if (point && !isProcessing && parsedUser.id) {
         setIsProcessing(true);
 
         try {
-          // [단계 1] 서버 액션 호출 (순서 및 유효성 검증)
+          // [단계 1] 서버 액션 호출 (순서 검증 및 완주 여부 판단)
           const result = await handleCheckIn(point, parsedUser.id);
           
           if (result.success) {
-            // [단계 2] stamps 테이블에 기록 추가
+            // [단계 2] stamps 테이블에 현재 지점 기록
             const { error: stampError } = await supabase.from('stamps').insert({
               user_id: parsedUser.id,
               checkpoint_id: point,
@@ -73,24 +73,30 @@ function DashboardContent() {
             if (stampError) throw stampError;
 
             // [단계 3] 완주 지점(FINISH)인 경우 laps 테이블에 기록 추가
-            if (result.isFinish) {
+            if (result.isFinish === true) {
               const { error: lapError } = await supabase.from('laps').insert({
                 user_id: parsedUser.id,
               });
-              if (lapError) console.error("Laps 기록 실패:", lapError);
+              
+              if (lapError) {
+                console.error("Laps 테이블 저장 실패:", lapError.message);
+              } else {
+                console.log("Laps 카운트 업 성공!");
+              }
             }
 
             // [단계 4] 후처리: URL 파라미터 제거 및 상태 즉시 갱신
             window.history.replaceState({}, '', '/rally');
             await fetchStatus(parsedUser.id);
             
+            // 성공 알림
             if (result.isFinish) {
               alert("🎊 축하합니다! 완주에 성공하셨습니다! 🎊");
             } else {
               alert(`${point} 지점 인증 성공!`);
             }
           } else {
-            // 검증 실패 메시지 (예: "MID를 먼저 찍으세요")
+            // 순서가 틀린 경우 (예: START 없이 MID 시도)
             alert(result.message);
             window.history.replaceState({}, '', '/rally');
           }
@@ -106,7 +112,6 @@ function DashboardContent() {
     fetchStatus(parsedUser.id);
     processCheckIn();
     
-    // 5초마다 배경 데이터 갱신
     const interval = setInterval(() => fetchStatus(parsedUser.id), 5000);
     return () => clearInterval(interval);
   }, [searchParams]);
@@ -123,7 +128,6 @@ function DashboardContent() {
 
   return (
     <main className="min-h-screen bg-zinc-50 pb-24 font-sans text-zinc-900">
-      {/* 상단 섹션 */}
       <div className="bg-[#D32F2F] p-8 text-white rounded-b-[2.5rem] shadow-lg">
         <div className="flex justify-between items-center mb-6 text-sm opacity-80 font-medium">
           <span>2026 제주들불축제</span>
@@ -139,13 +143,11 @@ function DashboardContent() {
       </div>
 
       <div className="p-6 space-y-4 -mt-8">
-        {/* 진행 상태 바 */}
         <div className="bg-white p-8 rounded-[2rem] shadow-md border border-zinc-100">
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
             <div className="absolute top-[16px] left-10 right-10 h-1 bg-zinc-100 z-0"></div>
             
-            {/* 진행 게이지 */}
             <div 
               className="absolute top-[16px] left-10 h-1 bg-red-500 z-0 transition-all duration-700 ease-in-out"
               style={{ 
@@ -185,7 +187,6 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* 대시보드 카드 */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100 text-center">
             <p className="text-[10px] text-zinc-400 font-black mb-1 uppercase tracking-widest">Total Laps</p>
@@ -198,7 +199,6 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* 하단 스캔 버튼 */}
       <div className="fixed bottom-6 left-0 right-0 px-6 font-sans">
         <button 
           onClick={() => router.push('/scan')}
@@ -213,7 +213,7 @@ function DashboardContent() {
 
 export default function Dashboard() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">데이터 동기화 중...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">동기화 중...</div>}>
       <DashboardContent />
     </Suspense>
   );
