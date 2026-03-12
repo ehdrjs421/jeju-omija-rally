@@ -35,7 +35,7 @@ export default function Home() {
     }
 
     localStorage.setItem('omija_user', JSON.stringify(data));
-    router.push('/rally');
+    window.location.href = '/rally';
   };
 
   return (
