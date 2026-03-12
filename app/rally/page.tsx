@@ -199,10 +199,13 @@ function DashboardContent() {
   );
 }
 
+// export default function Dashboard() {
+//   return (
+//     <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">동기화 중...</div>}>
+//       <DashboardContent />
+//     </Suspense>
+//   );
+// }
 export default function Dashboard() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">동기화 중...</div>}>
-      <DashboardContent />
-    </Suspense>
-  );
+  return <DashboardContent />; // Suspense를 잠시 제거하고 생으로 호출
 }
