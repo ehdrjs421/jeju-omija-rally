@@ -1,7 +1,7 @@
-'use server'
+'use server';
 
 // app/actions/checkin.ts 기준에서 utils는 두 단계 위(../../)에 있습니다.
-import { createClient } from '../../utils/supabase/server'; 
+import { createClient } from '@/utils/supabase/server'; 
 
 export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: string, userName?: string) {
   // 에러가 나면 여기서 멈추므로 반드시 위 import가 성공해야 합니다.
