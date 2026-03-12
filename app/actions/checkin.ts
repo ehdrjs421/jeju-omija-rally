@@ -2,16 +2,16 @@
 
 import { createClient } from '@/utils/supabase/server';
 
-// 지점별 실제 좌표 설정 (새별오름 예시 좌표)
+// 📍 지점별 목표 좌표 (전달해주신 좌표 반영)
 const CHECKPOINTS_COORD = {
-  START: { lat: 33.3615, lng: 126.3547 },
-  MID: { lat: 33.3650, lng: 126.3560 },
-  FINISH: { lat: 33.3615, lng: 126.3547 },
+  START: { lat: 33.363414, lng: 126.357822 }, 
+  MID: { lat: 33.3662736, lng: 126.3576163 }, 
+  FINISH: { lat: 33.365741, lng: 126.361036 }
 };
 
-// 두 좌표 사이의 거리(m) 계산 함수
+// 📏 두 좌표 사이의 거리(m)를 구하는 함수
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3;
+  const R = 6371e3; 
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -25,24 +25,31 @@ export async function handleCheckIn(
   point: 'START' | 'MID' | 'FINISH', 
   userId: string, 
   userName?: string,
-  userLat?: number, // 추가
-  userLng?: number  // 추가
+  userLat?: number, 
+  userLng?: number
 ) {
+  console.log("🔥🔥 [SERVER ACTION] 인증 시도:", { point, userId, userLat, userLng });
   const supabase = await createClient();
   const currentPoint = point.toUpperCase() as keyof typeof CHECKPOINTS_COORD;
 
-  // 1. GPS 거리 검증 (좌표가 넘어온 경우)
+  // 1️⃣ GPS 거리 검증
   if (userLat && userLng) {
     const target = CHECKPOINTS_COORD[currentPoint];
     const distance = getDistance(userLat, userLng, target.lat, target.lng);
     
-    if (distance > 300) { // 300미터 이상이면 거부
-      return { success: false, message: `지점과 너무 멉니다. (약 ${Math.round(distance)}m)` };
+    // 300미터 이상이면 거부
+    if (distance > 300) {
+      return { 
+        success: false, 
+        message: `지점과 너무 멉니다. (약 ${Math.round(distance)}m 거리) 해당 장소로 이동 후 스캔해주세요.` 
+      };
     }
+  } else {
+    return { success: false, message: "위치 정보가 전송되지 않았습니다. GPS 권한을 허용해주세요." };
   }
 
   try {
-    // 2. 마지막 기록 조회 및 순서 검증 (기존 로직 동일)
+    // 2️⃣ 순서 검증 로직
     const { data: lastStamp } = await supabase
       .from('stamps')
       .select('checkpoint_id')
@@ -52,27 +59,29 @@ export async function handleCheckIn(
       .maybeSingle();
 
     const lastPoint = lastStamp?.checkpoint_id?.toUpperCase();
-    if (currentPoint === 'MID' && lastPoint !== 'START') return { success: false, message: '출발(START)을 먼저 하세요.' };
-    if (currentPoint === 'FINISH' && lastPoint !== 'MID') return { success: false, message: '정상(MID)을 먼저 하세요.' };
+    if (currentPoint === 'MID' && lastPoint !== 'START') return { success: false, message: '출발(START)을 먼저 스캔하세요.' };
+    if (currentPoint === 'FINISH' && lastPoint !== 'MID') return { success: false, message: '정상(MID)을 먼저 스캔하세요.' };
 
-    // 3. 스탬프 찍기 (GPS 좌표 포함 저장)
+    // 3️⃣ 스탬프 저장 (GPS 좌표 포함)
     const { error: stampError } = await supabase.from('stamps').insert({
       user_id: userId,
       checkpoint_id: currentPoint,
-      gps_lat: userLat || 0, // DB 컬럼이 있다는 가정
-      gps_lng: userLng || 0
+      gps_lat: userLat,
+      gps_lng: userLng
     });
 
     if (stampError) throw stampError;
 
+    // 4️⃣ 완주 처리
     let isFinish = false;
     if (currentPoint === 'FINISH') {
       await supabase.from('laps').insert({ user_id: userId });
       isFinish = true;
     }
 
-    return { success: true, message: isFinish ? "완주 성공!" : `${currentPoint} 인증!`, isFinish };
+    return { success: true, message: isFinish ? "완주를 축하합니다!" : `${currentPoint} 지점 인증 성공!`, isFinish };
   } catch (err: any) {
-    return { success: false, message: "처리 중 오류가 발생했습니다." };
+    console.error("인증 실패:", err.message);
+    return { success: false, message: "DB 저장 중 오류가 발생했습니다." };
   }
 }
