@@ -34,20 +34,23 @@ export async function handleCheckIn(
   const currentPoint = point.toUpperCase() as keyof typeof CHECKPOINTS_COORD;
   const currentName = POINT_NAMES[currentPoint];
 
-  // 1️⃣ GPS 거리 검증
+  // 1️⃣ GPS 거리 검증 (300m)
   if (userLat && userLng) {
     const target = CHECKPOINTS_COORD[currentPoint];
     const distance = getDistance(userLat, userLng, target.lat, target.lng);
     if (distance > 300) {
-      return { success: false, message: `[${currentName}] 지점과 너무 멉니다. (약 ${Math.round(distance)}m) 해당 장소로 이동해주세요.` };
+      return { 
+        success: false, 
+        message: `📍 [${currentName}] 지점과 너무 멉니다. (약 ${Math.round(distance)}m 거리) 해당 장소로 이동해주세요.` 
+      };
     }
   } else {
-    return { success: false, message: "위치 정보가 전송되지 않았습니다." };
+    return { success: false, message: "위치 정보가 전송되지 않았습니다. GPS를 켜주세요." };
   }
 
   try {
-    // 2️⃣ 현재 바퀴(Lap) 상태 확인
-    // 가장 최근 완주 시간을 가져옵니다.
+    // 2️⃣ 현재 바퀴(Lap)의 진행 상태 파악
+    // 마지막 완주 시간을 가져와서 그 이후의 스탬프만 필터링합니다.
     const { data: lastLap } = await supabase
       .from('laps')
       .select('created_at')
@@ -58,37 +61,39 @@ export async function handleCheckIn(
 
     const lastLapTime = lastLap?.created_at || '1970-01-01T00:00:00Z';
 
-    // 마지막 완주 이후에 찍은 스탬프들만 가져옵니다.
-    const { data: currentSessionStamps } = await supabase
+    const { data: currentStamps } = await supabase
       .from('stamps')
       .select('checkpoint_id')
       .eq('user_id', userId)
-      .gt('created_at', lastLapTime) // 🚀 핵심: 이전 완주 기록은 무시
-      .order('created_at', { ascending: false });
+      .gt('created_at', lastLapTime)
+      .order('created_at', { ascending: true }); // 시간 순으로 정렬
 
-    const lastPoint = currentSessionStamps?.[0]?.checkpoint_id?.toUpperCase();
+    const stampedPoints = currentStamps?.map(s => s.checkpoint_id.toUpperCase()) || [];
+    const lastPoint = stampedPoints[stampedPoints.length - 1];
 
-    // 3️⃣ 순서 검증 로직 상세화
-    if (currentPoint === 'START') {
-      if (lastPoint === 'START') return { success: false, message: '이미 출발 인증을 완료했습니다. 정상(MID)으로 이동하세요.' };
-      if (lastPoint === 'MID') return { success: false, message: '이미 정상 인증을 완료했습니다. 도착(FINISH)으로 이동하세요.' };
+    // 3️⃣ 순서 및 중복 검증 로직 (핵심)
+    
+    // 이미 찍은 지점인지 확인
+    if (stampedPoints.includes(currentPoint)) {
+      return { success: false, message: `이미 [${currentName}] 인증을 완료했습니다. 다음 지점으로 이동하세요.` };
     }
 
+    // 단계별 순서 제약
     if (currentPoint === 'MID') {
-      if (!lastPoint) return { success: false, message: '출발(START) 지점을 먼저 인증해야 합니다.' };
-      if (lastPoint === 'MID') return { success: false, message: '이미 정상 인증을 완료했습니다.' };
+      // MID를 찍으려면 반드시 START가 먼저 찍혀있어야 함
+      if (!stampedPoints.includes('START')) {
+        return { success: false, message: '출발(START) 인증을 먼저 완료해야 합니다.' };
+      }
     }
 
     if (currentPoint === 'FINISH') {
-      if (!lastPoint || lastPoint === 'START') return { success: false, message: '정상(MID) 지점을 먼저 인증해야 합니다.' };
+      // FINISH를 찍으려면 반드시 MID가 먼저 찍혀있어야 함
+      if (!stampedPoints.includes('MID')) {
+        return { success: false, message: '정상(MID) 인증을 먼저 완료해야 합니다.' };
+      }
     }
 
-    // 4️⃣ 중복 스캔 방지 (같은 지점을 연속해서 찍는 경우)
-    if (lastPoint === currentPoint) {
-      return { success: false, message: `이미 [${currentName}] 지점 인증이 완료된 상태입니다.` };
-    }
-
-    // 5️⃣ 스탬프 저장
+    // 4️⃣ 스탬프 저장
     const { error: stampError } = await supabase.from('stamps').insert({
       user_id: userId,
       checkpoint_id: currentPoint,
@@ -97,7 +102,7 @@ export async function handleCheckIn(
     });
     if (stampError) throw stampError;
 
-    // 6️⃣ 완주 처리
+    // 5️⃣ 완주 처리 (FINISH 인증 시)
     let isFinish = false;
     if (currentPoint === 'FINISH') {
       const { error: lapError } = await supabase.from('laps').insert({ user_id: userId });
@@ -107,11 +112,14 @@ export async function handleCheckIn(
 
     return { 
       success: true, 
-      message: isFinish ? "완주 성공! 한 바퀴를 돌았습니다! 🍊" : `${currentName} 인증 성공! 다음 지점으로 이동하세요.`, 
+      message: isFinish 
+        ? "축하합니다! 모든 코스를 완주하셨습니다! 🍊" 
+        : `✅ ${currentName} 인증 성공! 다음 지점으로 이동하세요.`, 
       isFinish 
     };
+
   } catch (err: any) {
     console.error("Check-in Error:", err);
-    return { success: false, message: "서버 오류가 발생했습니다." };
+    return { success: false, message: "처리 중 서버 오류가 발생했습니다." };
   }
 }
