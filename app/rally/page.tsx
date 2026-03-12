@@ -10,6 +10,7 @@ import { handleCheckIn } from '@/app/actions/checkin';
 export default function RallyPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [isChecking, setIsChecking] = useState(true);
   const [lapCount, setLapCount] = useState(0);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -49,7 +50,7 @@ export default function RallyPage() {
     }
     const parsedUser = JSON.parse(savedUser);
     setUser(parsedUser);
-
+    setIsChecking(false);
     // 🚀 [STEP 2] URL 파라미터 수동 추출 (Suspense 이슈 방지)
     const params = new URLSearchParams(window.location.search);
     const point = params.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
@@ -92,12 +93,12 @@ export default function RallyPage() {
   }, []); // 의존성을 비워 렌더링 무한 루프 방지
 
   // 유저 정보 로드 전 대기 화면
-  if (!user) {
+  if (isChecking) {
     return (
       <div className="min-h-screen bg-zinc-900 flex items-center justify-center text-white font-sans">
         <div className="text-center space-y-4">
           <Loader2 className="animate-spin mx-auto text-red-500" size={40} />
-          <p className="font-black tracking-widest text-sm uppercase">Loading Profile...</p>
+          <p className="font-black tracking-widest text-sm uppercase">인증 확인 중...</p>
         </div>
       </div>
     );
