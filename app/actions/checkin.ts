@@ -3,10 +3,10 @@
 import { createClient } from '@/utils/supabase/server';
 
 const CHECKPOINTS_COORD = {
-  // START: { lat: 33.363414, lng: 126.357822 },
-  START: { lat: 37.52976, lng: 127.1150931 }, // 잠실 올림픽공원 기준 (전달해주신 좌표)
-  // MID: { lat: 33.3662736, lng: 126.3576163 },
-  MID : { lat: 37.52976, lng: 127.1150931 },
+  START: { lat: 33.363414, lng: 126.357822 },
+  // START: { lat: 37.52976, lng: 127.1150931 }, // 잠실 올림픽공원 기준 (전달해주신 좌표)
+  MID: { lat: 33.3662736, lng: 126.3576163 },
+  // MID : { lat: 37.52976, lng: 127.1150931 },
   FINISH: { lat: 33.365741, lng: 126.361036 }
 };
 
