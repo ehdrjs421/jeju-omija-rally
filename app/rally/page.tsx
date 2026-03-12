@@ -56,13 +56,21 @@ function DashboardContent() {
         setIsProcessing(true);
 
         try {
-          // ✅ 서버 액션에서 검증 + insert 모두 처리
+          // 🚀 [에러 방지 핵심] 새로운 기기/유저 접속 시 Foreign Key 에러를 막기 위해
+          // users 테이블에 유저 정보를 먼저 등록하거나 갱신합니다.
+          const { error: userError } = await supabase.from('users').upsert({ 
+            id: parsedUser.id, 
+            name: parsedUser.name,
+            bib_number: `BIB-${parsedUser.id.slice(0, 8)}`, // 스키마의 NOT NULL 제약조건 충족
+            status: 'READY'
+          });
+
+          if (userError) throw userError;
+
+          // 서버 액션 호출 (서버 액션 내부에서 stamps와 laps insert가 처리되어야 함)
           const result = await handleCheckIn(point, parsedUser.id);
 
           if (result.success) {
-            // ❌ 클라이언트 insert 제거 (서버 액션에서 이미 처리)
-
-            // 후처리: URL 파라미터 제거 및 상태 갱신
             window.history.replaceState({}, '', '/rally');
             await fetchStatus(parsedUser.id);
 
@@ -77,7 +85,7 @@ function DashboardContent() {
           }
         } catch (err) {
           console.error("인증 처리 중 오류:", err);
-          alert("데이터 처리 중 오류가 발생했습니다.");
+          alert("데이터 처리 중 오류가 발생했습니다. (DB 연결 확인 필요)");
         } finally {
           setIsProcessing(false);
         }
@@ -130,7 +138,6 @@ function DashboardContent() {
               }}
             ></div>
 
-            {/* START */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['START', 'MID', 'FINISH'].includes(currentStep || '')
@@ -140,7 +147,6 @@ function DashboardContent() {
               <span className={`text-[11px] font-black uppercase ${currentStep ? 'text-red-600' : 'text-zinc-300'}`}>Start</span>
             </div>
 
-            {/* MID */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['MID', 'FINISH'].includes(currentStep || '')
@@ -150,7 +156,6 @@ function DashboardContent() {
               <span className={`text-[11px] font-black uppercase ${['MID', 'FINISH'].includes(currentStep || '') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
             </div>
 
-            {/* FINISH */}
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {currentStep === 'FINISH'
