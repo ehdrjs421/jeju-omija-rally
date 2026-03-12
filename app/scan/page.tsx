@@ -67,22 +67,47 @@ export default function ScanPage() {
       await stopScanner();
       setStatus('processing');
 
-      // 🚀 네이버 단축 URL 우회 및 우리 앱 주소로 재구성
-      const myAppUrl = "https://jeju-omija-rally.pages.dev/rally";
-      const scannedParams = new URLSearchParams(decodedText.split('?')[1]);
-      const point = (scannedParams.get('point') || 'START').toUpperCase();
+      // 🚀 [타입 에러 방어] URL 객체 생성 및 point 추출
+      const urlObj = new URL(decodedText.includes('http') ? decodedText : `https://temp.com${decodedText}`);
+      
+      // 1. URLSearchParams에서 추출 시도 후 null이면 undefined로 변환
+      let point = urlObj.searchParams.get('point')?.toUpperCase() ?? undefined;
 
+      // 2. 만약 없다면 정규식으로 한 번 더 시도
+      if (!point) {
+        const match = decodedText.match(/[?&]point=([^&]+)/i);
+        point = match ? match[1].toUpperCase() : undefined;
+      }
+
+      // 🚀 point가 여전히 없다면 (잘못된 QR인 경우)
+      if (!point) {
+        alert("잘못된 인증 코드입니다. (point 정보 없음)");
+        setStatus('scanning');
+        setMessage('QR 코드를 다시 스캔해주세요.');
+        startScanner(); // 스캐너 재시작
+        return;
+      }
+
+      const myAppUrl = "https://jeju-omija-rally.pages.dev/rally";
+      // 🚀 위에서 point를 string으로 확정지었기 때문에 안전하게 템플릿 리터럴 사용 가능
       const finalUrl = `${myAppUrl}?point=${point}&lat=${lastCoords.current.lat}&lng=${lastCoords.current.lng}`;
+      
+      console.log("🚀 최종 이동 경로:", finalUrl);
       window.location.href = finalUrl;
     } catch (e) {
+      console.error("추출 오류:", e);
+      alert("QR 코드 분석 중 오류가 발생했습니다.");
       setStatus('scanning');
+      startScanner();
     }
   };
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col font-sans">
       <div className="p-4 flex items-center gap-4 bg-zinc-900 border-b border-zinc-800">
-        <button onClick={() => router.back()} className="p-2 active:scale-95"><ArrowLeft size={24} /></button>
+        <button onClick={() => router.back()} className="p-2 active:scale-95">
+          <ArrowLeft size={24} />
+        </button>
         <h1 className="text-xl font-bold">지점 인증</h1>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center p-6">
