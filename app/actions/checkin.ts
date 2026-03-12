@@ -13,11 +13,11 @@ export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: s
 
   try {
     // 1단계: 유저 확인 및 등록 (수동 등록 전까지 에러 방지용)
-    await supabase.from('users').upsert({
-      id: userId,
-      name: userName || '참가자',
-      bib_number: `BIB-${userId.slice(0, 8)}`
-    }, { onConflict: 'id' });
+    // await supabase.from('users').upsert({
+    //   id: userId,
+    //   name: userName || '참가자',
+    //   bib_number: `BIB-${userId.slice(0, 8)}`
+    // }, { onConflict: 'id' });
 
     // 2단계: 마지막 기록 조회
     const { data: lastStamp } = await supabase
