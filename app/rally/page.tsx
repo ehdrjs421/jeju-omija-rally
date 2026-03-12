@@ -1,31 +1,28 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Trophy, QrCode, LogOut, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { handleCheckIn } from '@/app/actions/checkin';
 
-function DashboardContent() {
+export default function RallyPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [lapCount, setLapCount] = useState(0);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 상태 업데이트 함수
+  // 1. 상태 및 스탬프 정보 불러오기 함수
   const fetchStatus = async (userId: string) => {
     try {
-      // 1. 완주 횟수(Laps) 조회
       const { count } = await supabase
         .from('laps')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
       setLapCount(count || 0);
 
-      // 2. 최근 스탬프(Stamps) 조회하여 현재 단계 파악
       const { data: latestStamps } = await supabase
         .from('stamps')
         .select('checkpoint_id')
@@ -39,12 +36,12 @@ function DashboardContent() {
         setCurrentStep(null);
       }
     } catch (err) {
-      console.error("데이터 로드 중 오류:", err);
+      console.error("데이터 로드 오류:", err);
     }
   };
 
   useEffect(() => {
-    // 1. 사용자 인증 확인
+    // 🚀 [STEP 1] 유저 정보 확인
     const savedUser = localStorage.getItem('omija_user');
     if (!savedUser) {
       router.replace('/');
@@ -53,58 +50,58 @@ function DashboardContent() {
     const parsedUser = JSON.parse(savedUser);
     setUser(parsedUser);
 
-    // 2. 체크인 처리 로직 (내부 선언)
+    // 🚀 [STEP 2] URL 파라미터 수동 추출 (Suspense 이슈 방지)
+    const params = new URLSearchParams(window.location.search);
+    const point = params.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+
     const processCheckIn = async (currentUser: any) => {
-      console.log("🚀 클라이언트: 체크인 프로세스 시작");
-      const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
-
-      // 실행 조건 검사
       if (!point) return;
-      if (isProcessing) {
-        console.log("⏳ 클라이언트: 이미 처리 중입니다.");
-        return;
-      }
-      if (!currentUser?.id) {
-        console.log("👤 클라이언트: 유저 로그인 정보가 없습니다.");
-        return;
-      }
+      if (isProcessing) return;
 
-      console.log("✅ 클라이언트: 모든 조건 충족. 서버 액션 호출!", { point, userId: currentUser.id });
+      console.log("🔥 [체크인 시작] 발견된 포인트:", point);
+      setIsProcessing(true);
 
       try {
-        setIsProcessing(true);
-
-        // 서버 액션 호출 (use server 함수)
         const result = await handleCheckIn(point, currentUser.id, currentUser.name || '참가자');
-        console.log("📡 서버로부터 응답 받음:", result);
+        console.log("📡 서버 응답 수신:", result);
 
         if (result.success) {
-          // 성공 시 URL 파라미터 청소 및 상태 갱신
-          window.history.replaceState({}, '', '/rally');
-          await fetchStatus(currentUser.id);
           alert(result.message);
         } else {
-          alert(`⚠️ 인증 실패: ${result.message}`);
-          window.history.replaceState({}, '', '/rally');
+          alert(`⚠️ 실패: ${result.message}`);
         }
+        
+        // URL 파라미터 제거 및 데이터 새로고침
+        window.history.replaceState({}, '', '/rally');
+        await fetchStatus(currentUser.id);
       } catch (err: any) {
-        console.error("🔥 클라이언트 처리 중 심각한 오류:", err);
-        alert(`시스템 오류가 발생했습니다: ${err.message}`);
+        console.error("🔥 서버 액션 호출 중 심각한 오류:", err);
+        alert("서버 통신 중 오류가 발생했습니다.");
       } finally {
         setIsProcessing(false);
       }
     };
 
-    // 초기 실행
+    // 로드 즉시 실행
     fetchStatus(parsedUser.id);
-    processCheckIn(parsedUser); // 유저 객체를 직접 전달하여 state 지연 문제 해결
+    if (point) processCheckIn(parsedUser);
 
-    // 5초마다 상태 동기화
+    // 5초 주기 업데이트
     const interval = setInterval(() => fetchStatus(parsedUser.id), 5000);
     return () => clearInterval(interval);
-  }, [searchParams]); // URL 파라미터가 바뀔 때마다 재실행
+  }, []); // 의존성을 비워 렌더링 무한 루프 방지
 
-  if (!user) return null;
+  // 유저 정보 로드 전 대기 화면
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-zinc-900 flex items-center justify-center text-white font-sans">
+        <div className="text-center space-y-4">
+          <Loader2 className="animate-spin mx-auto text-red-500" size={40} />
+          <p className="font-black tracking-widest text-sm uppercase">Loading Profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   const getStatusMessage = () => {
     if (isProcessing) return "인증 정보를 처리 중입니다...";
@@ -116,7 +113,7 @@ function DashboardContent() {
 
   return (
     <main className="min-h-screen bg-zinc-50 pb-24 font-sans text-zinc-900">
-      {/* 헤더 섹션 */}
+      {/* 상단 헤더 */}
       <div className="bg-[#D32F2F] p-8 text-white rounded-b-[2.5rem] shadow-lg">
         <div className="flex justify-between items-center mb-6 text-sm opacity-80 font-medium">
           <span>2026 제주들불축제</span>
@@ -125,14 +122,14 @@ function DashboardContent() {
           </button>
         </div>
         <h1 className="text-3xl font-black mb-1 italic">{user.name}님,</h1>
-        <p className="text-lg opacity-90 leading-tight flex items-center gap-2">
+        <div className="text-lg opacity-90 leading-tight flex items-center gap-2">
           {isProcessing && <Loader2 size={18} className="animate-spin" />}
-          {getStatusMessage()}
-        </p>
+          <p>{getStatusMessage()}</p>
+        </div>
       </div>
 
-      {/* 프로그레스 바 섹션 */}
       <div className="p-6 space-y-4 -mt-8">
+        {/* 진행 상황 프로그레스 바 */}
         <div className="bg-white p-8 rounded-[2rem] shadow-md border border-zinc-100">
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
@@ -144,12 +141,11 @@ function DashboardContent() {
               }}
             ></div>
 
-            {/* 단계별 아이콘 */}
             {[
               { id: 'START', label: 'Start' },
               { id: 'MID', label: 'Mid' },
               { id: 'FINISH', label: 'Finish' }
-            ].map((step, index) => {
+            ].map((step) => {
               const isCompleted = 
                 (step.id === 'START' && ['START', 'MID', 'FINISH'].includes(currentStep || '')) ||
                 (step.id === 'MID' && ['MID', 'FINISH'].includes(currentStep || '')) ||
@@ -173,15 +169,15 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* 통계 섹션 */}
+        {/* 랩 카운트 & 랭킹 버튼 */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100 text-center">
             <p className="text-[10px] text-zinc-400 font-black mb-1 uppercase tracking-widest">Total Laps</p>
             <p className="text-3xl font-black text-zinc-800">{lapCount}</p>
           </div>
-          <button onClick={() => router.push('/ranking')} className="bg-zinc-900 p-6 rounded-[2rem] shadow-xl text-center active:scale-95 transition-all">
+          <button onClick={() => router.push('/ranking')} className="bg-zinc-900 p-6 rounded-[2rem] shadow-xl text-center active:scale-95 transition-all group">
             <p className="text-[10px] text-zinc-500 font-black mb-1 uppercase tracking-widest">Ranking</p>
-            <div className="flex justify-center text-yellow-500"><Trophy size={28} /></div>
+            <div className="flex justify-center text-yellow-500 group-hover:scale-110 transition-transform"><Trophy size={28} /></div>
           </button>
         </div>
       </div>
@@ -197,15 +193,4 @@ function DashboardContent() {
       </div>
     </main>
   );
-}
-
-// export default function Dashboard() {
-//   return (
-//     <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center text-white">동기화 중...</div>}>
-//       <DashboardContent />
-//     </Suspense>
-//   );
-// }
-export default function Dashboard() {
-  return <DashboardContent />; // Suspense를 잠시 제거하고 생으로 호출
 }
