@@ -12,6 +12,13 @@ export default function AdminDashboard() {
   const [password, setPassword] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // 지점 코드와 한글 명칭 매핑
+  const POINT_LABELS: Record<string, string> = {
+    START: '출발',
+    MID: '정상',
+    FINISH: '도착'
+  };
+
   const handleAuth = () => {
     if (password === 'omija2026') { 
       setIsAdmin(true);
@@ -46,14 +53,14 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
-  // 🚀 수동 인증 로직 (순차 제약 및 중복 키 에러 방지 강화)
+  // 🚀 수동 인증 로직: 순차 가이드 및 한글화 반영
   const manualStamp = async (userId: string, userName: string) => {
-    if (loading) return; // 중복 클릭 방지
+    if (loading) return;
 
     try {
       setLoading(true);
 
-      // 1. 현재 바퀴의 마지막 상태 확인
+      // 1. 현재 사용자의 마지막 완주 이후 스탬프 목록 가져오기
       const { data: lastLap } = await supabase
         .from('laps')
         .select('created_at')
@@ -73,21 +80,27 @@ export default function AdminDashboard() {
 
       const stampedPoints = currentStamps?.map(s => s.checkpoint_id.toUpperCase()) || [];
       
-      // 2. 다음에 찍어야 할 지점 가이드 생성
-      let nextStep = "START";
-      if (stampedPoints.includes("MID")) nextStep = "FINISH";
-      else if (stampedPoints.includes("START")) nextStep = "MID";
+      // 2. 다음에 찍어야 할 지점 자동 판별 (START -> MID -> FINISH)
+      let nextStep: 'START' | 'MID' | 'FINISH' = "START";
+      if (stampedPoints.includes("MID")) {
+        nextStep = "FINISH";
+      } else if (stampedPoints.includes("START")) {
+        nextStep = "MID";
+      }
 
-      const confirmMsg = `${userName}님의 다음 인증 순서는 [${nextStep}]입니다.\n진행하시겠습니까?\n(취소하려면 'Cancel' 클릭)`;
+      // 3. 한글 명칭으로 확인 창 띄우기
+      const nextLabel = POINT_LABELS[nextStep];
+      const confirmMsg = `[${userName}]님의 다음 인증 순서는 <${nextLabel}>입니다.\n강제 인증을 진행하시겠습니까?`;
+      
       if (!confirm(confirmMsg)) {
         setLoading(false);
         return;
       }
 
-      // 3. 스탬프 기록 추가
+      // 4. 스탬프 기록 추가
       const { error: stampError } = await supabase.from('stamps').insert({
         user_id: userId,
-        checkpoint_id: nextStep,
+        checkpoint_id: nextStep, // DB에는 START, MID, FINISH로 저장 (일관성 유지)
         gps_lat: 0,
         gps_lng: 0,
         admin_override: true
@@ -95,9 +108,8 @@ export default function AdminDashboard() {
 
       if (stampError) throw new Error(`스탬프 저장 실패: ${stampError.message}`);
 
-      // 4. FINISH인 경우에만 완주(laps) 처리
+      // 5. FINISH인 경우 완주(laps) 처리 및 중복 방지
       if (nextStep === 'FINISH') {
-        // 중복 키 에러 방지를 위해 최신 카운트 다시 조회
         const { count } = await supabase
           .from('laps')
           .select('*', { count: 'exact', head: true })
@@ -111,13 +123,13 @@ export default function AdminDashboard() {
         });
 
         if (lapError) {
-          if (lapError.code === '23505') throw new Error("이미 완주 처리가 되었습니다.");
-          throw new Error(`완주 저장 실패: ${lapError.message}`);
+          if (lapError.code === '23505') throw new Error("이미 완주 처리가 된 바퀴입니다.");
+          throw new Error(`완주 기록 저장 실패: ${lapError.message}`);
         }
       }
 
-      alert(`${userName}님 - [${nextStep}] 인증 완료!`);
-      await fetchAdminData();
+      alert(`${userName}님 [${nextLabel}] 인증이 완료되었습니다!`);
+      await fetchAdminData(); // 대시보드 새로고침
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -132,7 +144,7 @@ export default function AdminDashboard() {
       <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-6 text-zinc-900">
         <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center">
           <div className="mb-6 inline-flex p-4 bg-red-50 rounded-2xl text-red-600"><AlertTriangle size={32} /></div>
-          <h1 className="text-2xl font-black mb-2 italic tracking-tight uppercase">Admin Access</h1>
+          <h1 className="text-2xl font-black mb-2 italic tracking-tight uppercase text-zinc-900">Admin Access</h1>
           <input 
             type="password" 
             className="w-full p-4 border border-zinc-200 rounded-2xl mb-4 outline-none focus:border-red-500 text-center text-lg font-bold"
@@ -154,12 +166,12 @@ export default function AdminDashboard() {
           <div>
             <div className="flex items-center gap-2 mb-1">
                <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-black rounded-md">LIVE</span>
-               <h1 className="text-3xl font-black tracking-tighter">운영국 관제 대시보드</h1>
+               <h1 className="text-3xl font-black tracking-tighter text-zinc-900">운영국 관제 대시보드</h1>
             </div>
             <p className="text-zinc-500 text-sm font-medium">참가자 데이터 수동 제어 모드</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={fetchAdminData} className="p-4 bg-white border border-zinc-200 rounded-2xl flex items-center gap-2 font-bold text-zinc-600 hover:bg-zinc-50 transition-all">
+            <button onClick={fetchAdminData} className="p-4 bg-white border border-zinc-200 rounded-2xl flex items-center gap-2 font-bold text-zinc-600 hover:bg-zinc-50 transition-all shadow-sm">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} /> 동기화
             </button>
             <button onClick={() => setIsAdmin(false)} className="p-4 bg-zinc-200 rounded-2xl text-zinc-600 hover:text-red-600 transition-all"><LogOut size={18} /></button>
@@ -169,7 +181,7 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-zinc-100 overflow-hidden">
           <div className="p-6 border-b bg-zinc-50/50 flex justify-between items-center">
             <h3 className="font-black italic text-zinc-800">PARTICIPANT LIST</h3>
-            <div className="relative w-72">
+            <div className="relative w-72 text-zinc-900">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                 <input 
                     className="w-full pl-11 pr-4 py-3 bg-white border border-zinc-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-zinc-200" 
@@ -185,8 +197,8 @@ export default function AdminDashboard() {
               <thead>
                 <tr className="bg-zinc-50 text-zinc-400 text-[10px] uppercase font-black tracking-widest border-b border-zinc-100">
                   <th className="p-6">참가자 정보</th>
-                  <th className="p-6">완주 기록</th>
-                  <th className="p-6">현재 위치</th>
+                  <th className="p-6 text-center">완주 기록</th>
+                  <th className="p-6 text-center">현재 위치</th>
                   <th className="p-6 text-right">기록 제어</th>
                 </tr>
               </thead>
@@ -197,17 +209,21 @@ export default function AdminDashboard() {
                       <p className="font-black text-zinc-900">{row.name}</p>
                       <p className="text-xs text-zinc-400 font-medium tracking-tight">BIB: {row.bib_number}</p>
                     </td>
-                    <td className="p-6">
-                      <div className="flex items-center gap-2">
+                    <td className="p-6 text-center">
+                      <div className="flex items-center justify-center gap-2">
                         <span className="text-2xl font-black text-red-600">{row.lapCount}</span>
                         <span className="text-[10px] font-bold text-zinc-400 uppercase">Laps</span>
                       </div>
                     </td>
-                    <td className="p-6">
+                    <td className="p-6 text-center">
                       {row.lastStamp ? (
-                        <div className="flex flex-col">
-                          <span className="text-sm font-black text-zinc-800">{row.lastStamp.checkpoint_id}</span>
-                          <span className="text-[10px] font-medium text-zinc-400">{new Date(row.lastStamp.created_at).toLocaleTimeString()}</span>
+                        <div className="flex flex-col items-center">
+                          <span className="px-3 py-1 bg-zinc-900 text-white text-[11px] font-black rounded-full mb-1">
+                            {POINT_LABELS[row.lastStamp.checkpoint_id] || row.lastStamp.checkpoint_id}
+                          </span>
+                          <span className="text-[10px] font-medium text-zinc-400 italic">
+                            {new Date(row.lastStamp.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
                       ) : <span className="text-zinc-300 font-medium">인증 전</span>}
                     </td>
@@ -217,7 +233,7 @@ export default function AdminDashboard() {
                         disabled={loading}
                         className="inline-flex items-center gap-2 px-5 py-2.5 bg-zinc-900 text-white text-xs font-black rounded-xl hover:bg-red-600 active:scale-95 disabled:opacity-50 transition-all shadow-lg shadow-zinc-200"
                       >
-                        <Edit3 size={14} /> 차례대로 인증
+                        <Edit3 size={14} /> {loading ? "처리중..." : "다음 단계 인증"}
                       </button>
                     </td>
                   </tr>
