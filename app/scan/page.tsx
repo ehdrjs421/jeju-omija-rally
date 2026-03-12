@@ -115,7 +115,7 @@ export default function ScanPage() {
   return (
     <main className="min-h-screen bg-black text-white flex flex-col font-sans">
       <div className="p-4 flex items-center gap-4 bg-zinc-900 border-b border-zinc-800">
-        <button onClick={() => router.back()} className="p-2 active:scale-95"><ArrowLeft size={24} /></button>
+        <button onClick={() => router.back()} className="p-2 active:scale-95"><ArrowLeft size={48} /></button>
         <h1 className="text-xl font-bold italic tracking-tight uppercase">Point Check-in</h1>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center p-6">
