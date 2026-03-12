@@ -29,28 +29,36 @@ export default function RallyPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem('omija_user');
-    if (!saved) { router.replace('/'); return; }
+    if (!saved) { 
+      router.replace('/'); 
+      return; 
+    }
     const parsed = JSON.parse(saved);
     setUser(parsed);
     setIsChecking(false);
 
     // 🚀 URL 파라미터 추출
     const params = new URLSearchParams(window.location.search);
-    const point = params.get('point')?.toUpperCase() as any;
+    const pointParam = params.get('point')?.toUpperCase();
     const latStr = params.get('lat');
     const lngStr = params.get('lng');
 
+    // 🚀 [수정] 타입 가드: point가 유효한 지점인지 확인
+    const isValidPoint = (p: string | undefined): p is 'START' | 'MID' | 'FINISH' => {
+      return ['START', 'MID', 'FINISH'].includes(p || '');
+    };
+
     // 🚀 인증 로직 실행
-    if (point && !hasProcessed.current) {
+    if (isValidPoint(pointParam) && !hasProcessed.current) {
       hasProcessed.current = true; // 실행됨을 표시
 
       const process = async () => {
         setIsProcessing(true);
 
-        // 좌표값이 없는 경우 처리
+        // 🚀 [수정] lat, lng 변수를 명확히 선언하고 파싱
         if (!latStr || !lngStr) {
           alert("위치 정보가 누락되었습니다. 다시 스캔해주세요.");
-          router.replace('/rally');
+          window.history.replaceState({}, '', '/rally'); // 파라미터 제거
           setIsProcessing(false);
           return;
         }
@@ -58,8 +66,11 @@ export default function RallyPage() {
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
 
+        console.log("📍 인증 시도 데이터:", { point: pointParam, lat, lng });
+
         try {
-          const result = await handleCheckIn(point, parsed.id, parsed.name, lat, lng);
+          // pointParam이 isValidPoint를 통과했으므로 타입이 보장됩니다.
+          const result = await handleCheckIn(pointParam, parsed.id, parsed.name, lat, lng);
           
           if (result.success) {
             alert(result.message);
@@ -67,6 +78,7 @@ export default function RallyPage() {
             alert(`⚠️ 인증 실패: ${result.message}`);
           }
         } catch (err) {
+          console.error("인증 처리 중 오류:", err);
           alert("서버 통신 중 오류가 발생했습니다.");
         } finally {
           // 주소창에서 파라미터 제거 (뒤로가기 시 중복 방지)
@@ -84,9 +96,9 @@ export default function RallyPage() {
   }, [router]);
 
   if (isChecking) return (
-    <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center text-white">
+    <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center text-white font-sans">
       <Loader2 className="animate-spin text-red-500 mb-2" size={40} />
-      <p className="text-sm font-bold tracking-widest">준비 중...</p>
+      <p className="text-sm font-bold tracking-widest uppercase">Initializing...</p>
     </div>
   );
 
@@ -95,12 +107,17 @@ export default function RallyPage() {
       {/* 상단 헤더 */}
       <div className="bg-[#D32F2F] p-8 text-white rounded-b-[2.5rem] shadow-lg">
         <div className="flex justify-between items-center mb-6 opacity-80 text-sm">
-          <span>2026 제주들불축제</span>
-          <button onClick={() => { localStorage.removeItem('omija_user'); router.push('/'); }}><LogOut size={20} /></button>
+          <span className="font-bold tracking-tighter">2026 JEJU FIRE FESTIVAL</span>
+          <button 
+            onClick={() => { localStorage.removeItem('omija_user'); router.push('/'); }}
+            className="p-1 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <LogOut size={20} />
+          </button>
         </div>
-        <h1 className="text-3xl font-black italic">{user.name}님,</h1>
+        <h1 className="text-3xl font-black italic mb-1">{user?.name}님,</h1>
         <div className="flex items-center gap-2 text-lg opacity-90 leading-tight">
-          {isProcessing && <Loader2 size={18} className="animate-spin" />}
+          {isProcessing && <Loader2 size={18} className="animate-spin text-white" />}
           <p>{isProcessing ? "인증을 처리하고 있습니다..." : "새별오름 랠리에 오신 걸 환영합니다!"}</p>
         </div>
       </div>
@@ -128,13 +145,16 @@ export default function RallyPage() {
           </div>
         </div>
 
-        {/* 하단 기록 섹션 */}
+        {/* 기록 섹션 */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100 text-center">
             <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">Total Laps</p>
             <p className="text-3xl font-black text-zinc-800">{lapCount}</p>
           </div>
-          <button onClick={() => router.push('/ranking')} className="bg-zinc-900 p-6 rounded-[2rem] shadow-xl text-yellow-500 flex flex-col items-center group">
+          <button 
+            onClick={() => router.push('/ranking')} 
+            className="bg-zinc-900 p-6 rounded-[2rem] shadow-xl text-yellow-500 flex flex-col items-center group active:scale-95 transition-all"
+          >
             <p className="text-[10px] text-zinc-500 font-black uppercase mb-1 tracking-widest">Ranking</p>
             <Trophy size={28} className="group-hover:scale-110 transition-transform" />
           </button>
@@ -142,7 +162,7 @@ export default function RallyPage() {
       </div>
 
       {/* 하단 고정 스캔 버튼 */}
-      <div className="fixed bottom-6 left-0 right-0 px-6">
+      <div className="fixed bottom-6 left-0 right-0 px-6 z-50">
         <button 
           onClick={() => router.push('/scan')} 
           disabled={isProcessing}
