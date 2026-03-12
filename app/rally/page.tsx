@@ -15,14 +15,17 @@ function DashboardContent() {
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // 상태 업데이트 함수
   const fetchStatus = async (userId: string) => {
     try {
+      // 1. 완주 횟수(Laps) 조회
       const { count } = await supabase
         .from('laps')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
       setLapCount(count || 0);
 
+      // 2. 최근 스탬프(Stamps) 조회하여 현재 단계 파악
       const { data: latestStamps } = await supabase
         .from('stamps')
         .select('checkpoint_id')
@@ -41,6 +44,7 @@ function DashboardContent() {
   };
 
   useEffect(() => {
+    // 1. 사용자 인증 확인
     const savedUser = localStorage.getItem('omija_user');
     if (!savedUser) {
       router.replace('/');
@@ -49,60 +53,56 @@ function DashboardContent() {
     const parsedUser = JSON.parse(savedUser);
     setUser(parsedUser);
 
-    const processCheckIn = async () => {
-  console.log("🚀 클라이언트: 체크인 프로세스 시작");
-  const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+    // 2. 체크인 처리 로직 (내부 선언)
+    const processCheckIn = async (currentUser: any) => {
+      console.log("🚀 클라이언트: 체크인 프로세스 시작");
+      const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
 
-  // 체크인 조건 확인
-  if (!point) {
-    console.log("⚠️ 클라이언트: point 파라미터가 없습니다.");
-    return;
-  }
-  if (isProcessing) {
-    console.log("⏳ 클라이언트: 이미 처리 중입니다.");
-    return;
-  }
-  if (!user?.id) {
-    console.log("👤 클라이언트: 유저 로그인 정보가 없습니다.");
-    return;
-  }
+      // 실행 조건 검사
+      if (!point) return;
+      if (isProcessing) {
+        console.log("⏳ 클라이언트: 이미 처리 중입니다.");
+        return;
+      }
+      if (!currentUser?.id) {
+        console.log("👤 클라이언트: 유저 로그인 정보가 없습니다.");
+        return;
+      }
 
-  console.log("✅ 클라이언트: 모든 조건 충족. 서버 액션 호출 직전!", { point, userId: user.id });
+      console.log("✅ 클라이언트: 모든 조건 충족. 서버 액션 호출!", { point, userId: currentUser.id });
 
-  try {
-    setIsProcessing(true);
+      try {
+        setIsProcessing(true);
 
-    // [중요] 서버 액션 호출
-    const result = await handleCheckIn(point, user.id, user.name || '참가자');
+        // 서버 액션 호출 (use server 함수)
+        const result = await handleCheckIn(point, currentUser.id, currentUser.name || '참가자');
+        console.log("📡 서버로부터 응답 받음:", result);
 
-    // 이제 result를 로그로 찍어야 에러가 안 납니다.
-    console.log("📡 서버로부터 응답 받음:", result);
+        if (result.success) {
+          // 성공 시 URL 파라미터 청소 및 상태 갱신
+          window.history.replaceState({}, '', '/rally');
+          await fetchStatus(currentUser.id);
+          alert(result.message);
+        } else {
+          alert(`⚠️ 인증 실패: ${result.message}`);
+          window.history.replaceState({}, '', '/rally');
+        }
+      } catch (err: any) {
+        console.error("🔥 클라이언트 처리 중 심각한 오류:", err);
+        alert(`시스템 오류가 발생했습니다: ${err.message}`);
+      } finally {
+        setIsProcessing(false);
+      }
+    };
 
-    if (result.success) {
-      // 성공 시: URL 파라미터 제거 및 상태 새로고침
-      window.history.replaceState({}, '', '/rally');
-      await fetchStatus(user.id);
-      alert(result.message);
-    } else {
-      // 실패 시: 에러 원인 알림
-      alert(`⚠️ 인증 실패: ${result.message}`);
-      window.history.replaceState({}, '', '/rally');
-    }
-  } catch (err: any) {
-    // 예상치 못한 네트워크/런타임 에러 발생 시
-    console.error("🔥 클라이언트 처리 중 심각한 오류:", err);
-    alert(`시스템 오류가 발생했습니다: ${err.message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
+    // 초기 실행
     fetchStatus(parsedUser.id);
-    processCheckIn();
+    processCheckIn(parsedUser); // 유저 객체를 직접 전달하여 state 지연 문제 해결
 
+    // 5초마다 상태 동기화
     const interval = setInterval(() => fetchStatus(parsedUser.id), 5000);
     return () => clearInterval(interval);
-  }, [searchParams]);
+  }, [searchParams]); // URL 파라미터가 바뀔 때마다 재실행
 
   if (!user) return null;
 
@@ -116,6 +116,7 @@ function DashboardContent() {
 
   return (
     <main className="min-h-screen bg-zinc-50 pb-24 font-sans text-zinc-900">
+      {/* 헤더 섹션 */}
       <div className="bg-[#D32F2F] p-8 text-white rounded-b-[2.5rem] shadow-lg">
         <div className="flex justify-between items-center mb-6 text-sm opacity-80 font-medium">
           <span>2026 제주들불축제</span>
@@ -130,12 +131,12 @@ function DashboardContent() {
         </p>
       </div>
 
+      {/* 프로그레스 바 섹션 */}
       <div className="p-6 space-y-4 -mt-8">
         <div className="bg-white p-8 rounded-[2rem] shadow-md border border-zinc-100">
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
             <div className="absolute top-[16px] left-10 right-10 h-1 bg-zinc-100 z-0"></div>
-
             <div
               className="absolute top-[16px] left-10 h-1 bg-red-500 z-0 transition-all duration-700 ease-in-out"
               style={{
@@ -143,35 +144,36 @@ function DashboardContent() {
               }}
             ></div>
 
-            <div className="relative z-10 flex flex-col items-center gap-3">
-              <div className="bg-white p-1 rounded-full">
-                {['START', 'MID', 'FINISH'].includes(currentStep || '')
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
-                  : <Circle className="text-zinc-200" size={32} />}
-              </div>
-              <span className={`text-[11px] font-black uppercase ${currentStep ? 'text-red-600' : 'text-zinc-300'}`}>Start</span>
-            </div>
+            {/* 단계별 아이콘 */}
+            {[
+              { id: 'START', label: 'Start' },
+              { id: 'MID', label: 'Mid' },
+              { id: 'FINISH', label: 'Finish' }
+            ].map((step, index) => {
+              const isCompleted = 
+                (step.id === 'START' && ['START', 'MID', 'FINISH'].includes(currentStep || '')) ||
+                (step.id === 'MID' && ['MID', 'FINISH'].includes(currentStep || '')) ||
+                (step.id === 'FINISH' && currentStep === 'FINISH');
 
-            <div className="relative z-10 flex flex-col items-center gap-3">
-              <div className="bg-white p-1 rounded-full">
-                {['MID', 'FINISH'].includes(currentStep || '')
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
-                  : <Circle className="text-zinc-200" size={32} />}
-              </div>
-              <span className={`text-[11px] font-black uppercase ${['MID', 'FINISH'].includes(currentStep || '') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
-            </div>
-
-            <div className="relative z-10 flex flex-col items-center gap-3">
-              <div className="bg-white p-1 rounded-full">
-                {currentStep === 'FINISH'
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
-                  : <Circle className="text-zinc-200" size={32} />}
-              </div>
-              <span className={`text-[11px] font-black uppercase ${currentStep === 'FINISH' ? 'text-red-600' : 'text-zinc-300'}`}>Finish</span>
-            </div>
+              return (
+                <div key={step.id} className="relative z-10 flex flex-col items-center gap-3">
+                  <div className="bg-white p-1 rounded-full">
+                    {isCompleted ? (
+                      <CheckCircle2 className="text-red-500" size={32} fill="white" />
+                    ) : (
+                      <Circle className="text-zinc-200" size={32} />
+                    )}
+                  </div>
+                  <span className={`text-[11px] font-black uppercase ${isCompleted ? 'text-red-600' : 'text-zinc-300'}`}>
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
+        {/* 통계 섹션 */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-zinc-100 text-center">
             <p className="text-[10px] text-zinc-400 font-black mb-1 uppercase tracking-widest">Total Laps</p>
@@ -184,7 +186,8 @@ function DashboardContent() {
         </div>
       </div>
 
-      <div className="fixed bottom-6 left-0 right-0 px-6 font-sans">
+      {/* 하단 고정 스캔 버튼 */}
+      <div className="fixed bottom-6 left-0 right-0 px-6">
         <button
           onClick={() => router.push('/scan')}
           className="w-full h-20 bg-zinc-900 text-white rounded-[2rem] font-black text-xl shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white"
