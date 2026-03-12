@@ -3,59 +3,83 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Html5Qrcode } from 'html5-qrcode';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Camera } from 'lucide-react';
 
 export default function ScanPage() {
   const router = useRouter();
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
-  const [status, setStatus] = useState<'scanning' | 'processing' | 'error'>('scanning');
-  const [message, setMessage] = useState('카메라 권한을 확인 중입니다...');
+  const [status, setStatus] = useState<'loading' | 'scanning' | 'processing' | 'error'>('loading');
+  const [message, setMessage] = useState('카메라 준비 중...');
 
   useEffect(() => {
-    const startScanner = async () => {
-      try {
-        const html5QrCode = new Html5Qrcode("reader");
-        qrScannerRef.current = html5QrCode;
+    // iOS Safari 대응을 위해 약간의 지연 후 시작
+    const timer = setTimeout(() => {
+      startScanner();
+    }, 500);
 
-        await html5QrCode.start(
-          { facingMode: "environment" }, 
-          { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
-          onScanSuccess,
-          () => {} 
-        );
-        setMessage('지점의 QR 코드를 스캔해주세요.');
-      } catch (err) {
-        setStatus('error');
-        setMessage('카메라를 켤 수 없습니다. 권한 설정을 확인해주세요.');
-      }
-    };
-
-    const onScanSuccess = async (decodedText: string) => {
-      // 스캔 성공 시 카메라 즉시 중지
-      if (qrScannerRef.current?.isScanning) {
-        await qrScannerRef.current.stop();
-      }
-
-      setStatus('processing');
-      setMessage('해당 지점으로 이동하고 있습니다...');
-
-      // 🚀 [핵심 로직] 네이버 QR 주소(단축 URL)로 직접 이동시킵니다.
-      // 이동하면 네이버가 알아서 우리 사이트의 ?point=START 주소로 보내줍니다.
-      if (decodedText.startsWith('http')) {
-        window.location.href = decodedText;
-      } else {
-        setStatus('error');
-        setMessage('유효한 QR 코드 주소가 아닙니다.');
-      }
-    };
-
-    startScanner();
     return () => {
-      if (qrScannerRef.current?.isScanning) {
-        qrScannerRef.current.stop().catch(() => {});
-      }
+      clearTimeout(timer);
+      stopScanner();
     };
   }, []);
+
+  const startScanner = async () => {
+    try {
+      const html5QrCode = new Html5Qrcode("reader");
+      qrScannerRef.current = html5QrCode;
+
+      // 후면 카메라 우선 순위 설정
+      const config = { 
+        fps: 10, 
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0 
+      };
+
+      // iOS에서 전면/후면 선택 이슈를 방지하기 위해 environment 모드 강제
+      await html5QrCode.start(
+        { facingMode: "environment" }, // 후면 카메라 지향
+        config,
+        onScanSuccess,
+        () => {} // 스캔 중 에러는 무시
+      );
+      
+      setStatus('scanning');
+      setMessage('지점의 QR 코드를 스캔해주세요.');
+    } catch (err: any) {
+      console.error("Scanner Error:", err);
+      setStatus('error');
+      // 권한 거부 시 메시지 세분화
+      if (err.includes("NotAllowedError") || err.includes("Permission denied")) {
+        setMessage('카메라 권한이 거부되었습니다. 설정에서 브라우저의 카메라 권한을 허용해주세요.');
+      } else {
+        setMessage('후면 카메라를 찾을 수 없거나 사용 중입니다.');
+      }
+    }
+  };
+
+  const stopScanner = async () => {
+    if (qrScannerRef.current && qrScannerRef.current.isScanning) {
+      try {
+        await qrScannerRef.current.stop();
+        qrScannerRef.current = null;
+      } catch (err) {
+        console.error("Stop Error:", err);
+      }
+    }
+  };
+
+  const onScanSuccess = async (decodedText: string) => {
+    await stopScanner();
+    setStatus('processing');
+    setMessage('지점 인증 중...');
+
+    if (decodedText.startsWith('http')) {
+      window.location.href = decodedText;
+    } else {
+      setStatus('error');
+      setMessage('올바른 랠리 QR 코드가 아닙니다.');
+    }
+  };
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col font-sans">
@@ -68,13 +92,21 @@ export default function ScanPage() {
 
       <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
         <style jsx global>{`
-          #reader { border: none !important; border-radius: 24px !important; overflow: hidden !important; }
+          #reader { border: none !important; border-radius: 2.5rem !important; overflow: hidden !important; }
           #reader__dashboard, #reader__camera_selection { display: none !important; }
           video { width: 100% !important; height: 100% !important; object-fit: cover !important; }
         `}</style>
 
-        <div className="w-full max-w-sm aspect-square relative z-10 overflow-hidden rounded-[2.5rem] border-4 border-zinc-800 bg-zinc-900">
+        <div className="w-full max-w-sm aspect-square relative z-10 overflow-hidden rounded-[2.5rem] border-4 border-zinc-800 bg-zinc-900 shadow-2xl shadow-red-500/10">
           <div id="reader" className="w-full h-full"></div>
+          
+          {status === 'loading' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-30">
+              <Loader2 className="animate-spin text-zinc-500 mb-2" size={32} />
+              <p className="text-xs text-zinc-500 font-bold tracking-tighter">CAMERA INITIALIZING</p>
+            </div>
+          )}
+
           {status === 'scanning' && (
             <div className="absolute inset-0 border-[40px] border-black/30 pointer-events-none flex items-center justify-center z-20">
               <div className="w-full h-0.5 bg-red-500 shadow-[0_0_15px_#ef4444] animate-pulse"></div>
@@ -83,12 +115,15 @@ export default function ScanPage() {
         </div>
 
         <div className="mt-10 text-center px-10 h-32 flex flex-col items-center justify-center">
-          {status === 'processing' && <Loader2 className="animate-spin mb-4 text-zinc-400" size={32} />}
-          <p className={`text-lg font-medium leading-relaxed ${status === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+          {status === 'processing' && <Loader2 className="animate-spin mb-4 text-red-500" size={32} />}
+          <p className={`text-lg font-bold leading-relaxed ${status === 'error' ? 'text-red-400' : 'text-zinc-400'}`}>
             {message}
           </p>
           {status === 'error' && (
-            <button onClick={() => window.location.reload()} className="mt-4 px-6 py-2 bg-zinc-800 rounded-full text-sm">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-4 px-8 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-bold transition-all active:scale-95"
+            >
               다시 시도하기
             </button>
           )}
