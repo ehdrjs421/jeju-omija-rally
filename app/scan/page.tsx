@@ -69,17 +69,33 @@ export default function ScanPage() {
   };
 
   const onScanSuccess = async (decodedText: string) => {
-    await stopScanner();
-    setStatus('processing');
-    setMessage('지점 인증 중...');
+  await stopScanner();
+  setStatus('processing');
+  setMessage('위치 정보를 확인 중입니다...');
 
-    if (decodedText.startsWith('http')) {
+  // 🛰️ GPS 좌표 가져오기
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords;
+      
+      // 기존 QR 결과 주소(예: /rally?point=START) 뒤에 좌표 파라미터 추가
+      const finalUrl = `${decodedText}&lat=${latitude}&lng=${longitude}`;
+      
+      setMessage('지점 인증 중...');
+      window.location.href = finalUrl;
+    },
+    (error) => {
+      console.warn("GPS 획득 실패:", error);
+      // GPS 실패 시에도 일단 보냄 (서버에서 필수 여부 판단)
       window.location.href = decodedText;
-    } else {
-      setStatus('error');
-      setMessage('올바른 랠리 QR 코드가 아닙니다.');
+    },
+    { 
+      enableHighAccuracy: true, // 높은 정확도 (배터리 사용량 증가하지만 정확함)
+      timeout: 5000,            // 5초 내에 못 잡으면 실패 처리
+      maximumAge: 0             // 캐시된 위치 사용 안 함
     }
-  };
+  );
+};
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col font-sans">

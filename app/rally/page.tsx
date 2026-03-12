@@ -16,6 +16,12 @@ export default function RallyPage() {
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const CHECKPOINTS_COORD = {
+  START: { lat: 33.363414, lng: 126.357822 }, // 출발지 (행사장 입구)
+  MID: { lat: 33.3662736, lng: 126.3576163 },   // 중간지점 (오름 정상)
+  FINISH: { lat: 33.365741, lng: 126.361036 }  // 도착지 (다시 입구)
+};
+
   // 1. 상태 및 스탬프 정보 불러오기 함수
   const fetchStatus = async (userId: string) => {
     try {
@@ -57,32 +63,40 @@ export default function RallyPage() {
     const point = params.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
 
     const processCheckIn = async (currentUser: any) => {
-      if (!point) return;
-      if (isProcessing) return;
+  if (!point) return;
+  if (isProcessing) return;
 
-      console.log("🔥 [체크인 시작] 발견된 포인트:", point);
-      setIsProcessing(true);
+  setIsProcessing(true);
 
-      try {
-        const result = await handleCheckIn(point, currentUser.id, currentUser.name || '참가자');
-        console.log("📡 서버 응답 수신:", result);
+  // 🛰️ URL에서 좌표 파라미터 읽기
+  const params = new URLSearchParams(window.location.search);
+  const lat = params.get('lat');
+  const lng = params.get('lng');
 
-        if (result.success) {
-          alert(result.message);
-        } else {
-          alert(`⚠️ 실패: ${result.message}`);
-        }
-        
-        // URL 파라미터 제거 및 데이터 새로고침
-        window.history.replaceState({}, '', '/rally');
-        await fetchStatus(currentUser.id);
-      } catch (err: any) {
-        console.error("🔥 서버 액션 호출 중 심각한 오류:", err);
-        alert("서버 통신 중 오류가 발생했습니다.");
-      } finally {
-        setIsProcessing(false);
-      }
-    };
+  try {
+    // 서버 액션 호출 시 좌표 전달
+    const result = await handleCheckIn(
+      point, 
+      currentUser.id, 
+      currentUser.name || '참가자',
+      lat ? parseFloat(lat) : undefined,
+      lng ? parseFloat(lng) : undefined
+    );
+
+    if (result.success) {
+      alert(result.message);
+    } else {
+      alert(`⚠️ 실패: ${result.message}`);
+    }
+    
+    window.history.replaceState({}, '', '/rally');
+    await fetchStatus(currentUser.id);
+  } catch (err: any) {
+    alert("서버 통신 중 오류가 발생했습니다.");
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
     // 로드 즉시 실행
     fetchStatus(parsedUser.id);
