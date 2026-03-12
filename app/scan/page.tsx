@@ -73,10 +73,9 @@ export default function ScanPage() {
     }
   };
 
-  const onScanSuccess = async (decodedText: string) => {
+const onScanSuccess = async (decodedText: string) => {
     if (status === 'processing') return;
 
-    // GPS 데이터가 없으면 진행 불가
     if (!lastCoords.current) {
       alert("📍 GPS 신호를 아직 기다리는 중입니다. 잠시 후 다시 스캔해주세요.");
       return;
@@ -85,23 +84,27 @@ export default function ScanPage() {
     try {
       await stopScanner();
       setStatus('processing');
-      setMessage('위치 정보를 전송 중입니다...');
 
-      // 🚀 URL 파라미터 병합 (안전한 방식)
-      const url = new URL(decodedText, window.location.origin);
-      
-      url.searchParams.set('lat', lastCoords.current.lat.toString());
-      url.searchParams.set('lng', lastCoords.current.lng.toString());
+      let targetUrl = decodedText;
 
-      console.log("🚀 최종 이동 URL:", url.toString());
+      // 🚀 [핵심 수정] 네이버 단축 URL이나 다른 주소가 들어와도 
+      // 우리 앱의 rally 페이지로 좌표를 강제 전달하도록 설정
+      const myAppUrl = "https://jeju-omija-rally.pages.dev/rally";
       
-      // 즉시 이동
-      window.location.href = url.toString();
+      // 스캔된 텍스트에서 point 값만 추출 (예: point=START)
+      const scannedParams = new URLSearchParams(decodedText.split('?')[1]);
+      const point = scannedParams.get('point') || 'START'; // 기본값 START
+
+      // 우리 앱 주소로 직접 재구성
+      const finalUrl = `${myAppUrl}?point=${point}&lat=${lastCoords.current.lat}&lng=${lastCoords.current.lng}`;
+
+      console.log("🚀 네이버를 우회하여 직접 이동:", finalUrl);
+      window.location.href = finalUrl;
+      
     } catch (e) {
-      console.error("❌ URL 생성 또는 이동 실패:", e);
-      // URL 형식이 아닐 경우를 대비한 대체 로직
-      const separator = decodedText.includes('?') ? '&' : '?';
-      window.location.href = `${decodedText}${separator}lat=${lastCoords.current.lat}&lng=${lastCoords.current.lng}`;
+      console.error("❌ 주소 처리 오류:", e);
+      alert("QR 코드 형식이 올바르지 않습니다.");
+      setStatus('scanning');
     }
   };
 
