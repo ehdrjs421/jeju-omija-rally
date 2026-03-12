@@ -52,45 +52,27 @@ function DashboardContent() {
     const processCheckIn = async () => {
       const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
 
-      if (point && !isProcessing && parsedUser.id) {
+      if (point && !isProcessing && user?.id) {
         setIsProcessing(true);
-
         try {
-          // 🚀 [에러 방지 핵심] 새로운 기기/유저 접속 시 Foreign Key 에러를 막기 위해
-          // users 테이블에 유저 정보를 먼저 등록하거나 갱신합니다.
-          const { error: userError } = await supabase.from('users').upsert({ 
-            id: parsedUser.id, 
-            name: parsedUser.name,
-            bib_number: `BIB-${parsedUser.id.slice(0, 8)}`, // 스키마의 NOT NULL 제약조건 충족
-            status: 'READY'
-          });
+      // 서버 액션 호출 시 유저 이름까지 전달합니다.
+        const result = await handleCheckIn(point, user.id, user.name);
 
-          if (userError) throw userError;
-
-          // 서버 액션 호출 (서버 액션 내부에서 stamps와 laps insert가 처리되어야 함)
-          const result = await handleCheckIn(point, parsedUser.id);
-
-          if (result.success) {
-            window.history.replaceState({}, '', '/rally');
-            await fetchStatus(parsedUser.id);
-
-            if (result.isFinish) {
-              alert("🎊 축하합니다! 완주에 성공하셨습니다! 🎊");
-            } else {
-              alert(`${point} 지점 인증 성공!`);
-            }
-          } else {
-            alert(result.message);
-            window.history.replaceState({}, '', '/rally');
-          }
-        } catch (err) {
-          console.error("인증 처리 중 오류:", err);
-          alert("데이터 처리 중 오류가 발생했습니다. (DB 연결 확인 필요)");
-        } finally {
-          setIsProcessing(false);
-        }
+        if (result.success) {
+          window.history.replaceState({}, '', '/rally');
+          await fetchStatus(user.id);
+          alert(result.message);
+        } else {
+          alert(result.message);
+          window.history.replaceState({}, '', '/rally');
       }
-    };
+    } catch (err) {
+      console.error("클라이언트 처리 오류:", err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+};
 
     fetchStatus(parsedUser.id);
     processCheckIn();
