@@ -15,17 +15,14 @@ function DashboardContent() {
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // 1. 데이터 새로고침 함수 (Laps 수와 현재 단계 갱신)
   const fetchStatus = async (userId: string) => {
     try {
-      // 전체 완주 횟수 가져오기
       const { count } = await supabase
         .from('laps')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId);
       setLapCount(count || 0);
 
-      // 마지막 스탬프 확인
       const { data: latestStamps } = await supabase
         .from('stamps')
         .select('checkpoint_id')
@@ -54,49 +51,27 @@ function DashboardContent() {
 
     const processCheckIn = async () => {
       const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
-      
-      // 파라미터가 있고 처리 중이 아닐 때 실행
+
       if (point && !isProcessing && parsedUser.id) {
         setIsProcessing(true);
 
         try {
-          // [단계 1] 서버 액션 호출 (순서 검증 및 완주 여부 판단)
+          // ✅ 서버 액션에서 검증 + insert 모두 처리
           const result = await handleCheckIn(point, parsedUser.id);
-          
+
           if (result.success) {
-            // [단계 2] stamps 테이블에 현재 지점 기록
-            const { error: stampError } = await supabase.from('stamps').insert({
-              user_id: parsedUser.id,
-              checkpoint_id: point,
-            });
+            // ❌ 클라이언트 insert 제거 (서버 액션에서 이미 처리)
 
-            if (stampError) throw stampError;
-
-            // [단계 3] 완주 지점(FINISH)인 경우 laps 테이블에 기록 추가
-            if (result.isFinish === true) {
-              const { error: lapError } = await supabase.from('laps').insert({
-                user_id: parsedUser.id,
-              });
-              
-              if (lapError) {
-                console.error("Laps 테이블 저장 실패:", lapError.message);
-              } else {
-                console.log("Laps 카운트 업 성공!");
-              }
-            }
-
-            // [단계 4] 후처리: URL 파라미터 제거 및 상태 즉시 갱신
+            // 후처리: URL 파라미터 제거 및 상태 갱신
             window.history.replaceState({}, '', '/rally');
             await fetchStatus(parsedUser.id);
-            
-            // 성공 알림
+
             if (result.isFinish) {
               alert("🎊 축하합니다! 완주에 성공하셨습니다! 🎊");
             } else {
               alert(`${point} 지점 인증 성공!`);
             }
           } else {
-            // 순서가 틀린 경우 (예: START 없이 MID 시도)
             alert(result.message);
             window.history.replaceState({}, '', '/rally');
           }
@@ -111,7 +86,7 @@ function DashboardContent() {
 
     fetchStatus(parsedUser.id);
     processCheckIn();
-    
+
     const interval = setInterval(() => fetchStatus(parsedUser.id), 5000);
     return () => clearInterval(interval);
   }, [searchParams]);
@@ -147,11 +122,11 @@ function DashboardContent() {
           <h2 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-8 text-center">Current Progress</h2>
           <div className="flex items-center justify-between relative px-4">
             <div className="absolute top-[16px] left-10 right-10 h-1 bg-zinc-100 z-0"></div>
-            
-            <div 
+
+            <div
               className="absolute top-[16px] left-10 h-1 bg-red-500 z-0 transition-all duration-700 ease-in-out"
-              style={{ 
-                width: currentStep === 'FINISH' ? 'calc(100% - 80px)' : currentStep === 'MID' ? '50%' : '0%' 
+              style={{
+                width: currentStep === 'FINISH' ? 'calc(100% - 80px)' : currentStep === 'MID' ? '50%' : '0%'
               }}
             ></div>
 
@@ -159,7 +134,7 @@ function DashboardContent() {
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['START', 'MID', 'FINISH'].includes(currentStep || '')
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" /> 
+                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
                   : <Circle className="text-zinc-200" size={32} />}
               </div>
               <span className={`text-[11px] font-black uppercase ${currentStep ? 'text-red-600' : 'text-zinc-300'}`}>Start</span>
@@ -169,7 +144,7 @@ function DashboardContent() {
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {['MID', 'FINISH'].includes(currentStep || '')
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" /> 
+                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
                   : <Circle className="text-zinc-200" size={32} />}
               </div>
               <span className={`text-[11px] font-black uppercase ${['MID', 'FINISH'].includes(currentStep || '') ? 'text-red-600' : 'text-zinc-300'}`}>Mid</span>
@@ -179,7 +154,7 @@ function DashboardContent() {
             <div className="relative z-10 flex flex-col items-center gap-3">
               <div className="bg-white p-1 rounded-full">
                 {currentStep === 'FINISH'
-                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" /> 
+                  ? <CheckCircle2 className="text-red-500" size={32} fill="white" />
                   : <Circle className="text-zinc-200" size={32} />}
               </div>
               <span className={`text-[11px] font-black uppercase ${currentStep === 'FINISH' ? 'text-red-600' : 'text-zinc-300'}`}>Finish</span>
@@ -200,7 +175,7 @@ function DashboardContent() {
       </div>
 
       <div className="fixed bottom-6 left-0 right-0 px-6 font-sans">
-        <button 
+        <button
           onClick={() => router.push('/scan')}
           className="w-full h-20 bg-zinc-900 text-white rounded-[2rem] font-black text-xl shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-all border-4 border-white"
         >
