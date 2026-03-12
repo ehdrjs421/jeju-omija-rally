@@ -37,28 +37,34 @@ export default function RallyPage() {
     setUser(parsed);
     setIsChecking(false);
 
-    // 🚀 URL 파라미터 추출
+    // 🚀 [디버깅 추가] 현재 URL 전체를 콘솔에 찍어봅니다.
+    console.log("🔗 현재 전체 URL:", window.location.href);
+
     const params = new URLSearchParams(window.location.search);
     const pointParam = params.get('point')?.toUpperCase();
     const latStr = params.get('lat');
     const lngStr = params.get('lng');
 
-    // 🚀 [수정] 타입 가드: point가 유효한 지점인지 확인
+    // 🚀 [디버깅 추가] 파라미터 추출 결과 확인
+    console.log("📍 파싱된 파라미터:", { pointParam, latStr, lngStr });
+
     const isValidPoint = (p: string | undefined): p is 'START' | 'MID' | 'FINISH' => {
       return ['START', 'MID', 'FINISH'].includes(p || '');
     };
 
-    // 🚀 인증 로직 실행
-    if (isValidPoint(pointParam) && !hasProcessed.current) {
-      hasProcessed.current = true; // 실행됨을 표시
+    if (pointParam && !hasProcessed.current) {
+      hasProcessed.current = true;
 
       const process = async () => {
         setIsProcessing(true);
 
-        // 🚀 [수정] lat, lng 변수를 명확히 선언하고 파싱
-        if (!latStr || !lngStr) {
-          alert("위치 정보가 누락되었습니다. 다시 스캔해주세요.");
-          window.history.replaceState({}, '', '/rally'); // 파라미터 제거
+        // 🚀 [수정] 누락 시 어떤 값이 부족한지 정확히 알림
+        if (!latStr || !lngStr || !isValidPoint(pointParam)) {
+          const errorMsg = `데이터 누락: point=${pointParam}, lat=${latStr}, lng=${lngStr}`;
+          console.error(errorMsg);
+          alert(`⚠️ ${errorMsg}\n다시 스캔해주세요.`);
+          
+          window.history.replaceState({}, '', '/rally');
           setIsProcessing(false);
           return;
         }
@@ -66,22 +72,16 @@ export default function RallyPage() {
         const lat = parseFloat(latStr);
         const lng = parseFloat(lngStr);
 
-        console.log("📍 인증 시도 데이터:", { point: pointParam, lat, lng });
-
         try {
-          // pointParam이 isValidPoint를 통과했으므로 타입이 보장됩니다.
           const result = await handleCheckIn(pointParam, parsed.id, parsed.name, lat, lng);
-          
           if (result.success) {
             alert(result.message);
           } else {
             alert(`⚠️ 인증 실패: ${result.message}`);
           }
         } catch (err) {
-          console.error("인증 처리 중 오류:", err);
           alert("서버 통신 중 오류가 발생했습니다.");
         } finally {
-          // 주소창에서 파라미터 제거 (뒤로가기 시 중복 방지)
           window.history.replaceState({}, '', '/rally');
           await fetchStatus(parsed.id);
           setIsProcessing(false);
