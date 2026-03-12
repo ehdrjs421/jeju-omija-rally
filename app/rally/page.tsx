@@ -50,27 +50,50 @@ function DashboardContent() {
     setUser(parsedUser);
 
     const processCheckIn = async () => {
-      const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
+  console.log("🚀 클라이언트: 체크인 프로세스 시작");
+  const point = searchParams.get('point')?.toUpperCase() as 'START' | 'MID' | 'FINISH' | null;
 
-      if (point && !isProcessing && user?.id) {
-        setIsProcessing(true);
-        try {
-      // 서버 액션 호출 시 유저 이름까지 전달합니다.
-        const result = await handleCheckIn(point, user.id, user.name);
+  // 체크인 조건 확인
+  if (!point) {
+    console.log("⚠️ 클라이언트: point 파라미터가 없습니다.");
+    return;
+  }
+  if (isProcessing) {
+    console.log("⏳ 클라이언트: 이미 처리 중입니다.");
+    return;
+  }
+  if (!user?.id) {
+    console.log("👤 클라이언트: 유저 로그인 정보가 없습니다.");
+    return;
+  }
 
-        if (result.success) {
-          window.history.replaceState({}, '', '/rally');
-          await fetchStatus(user.id);
-          alert(result.message);
-        } else {
-          alert(result.message);
-          window.history.replaceState({}, '', '/rally');
-      }
-    } catch (err) {
-      console.error("클라이언트 처리 오류:", err);
-    } finally {
-      setIsProcessing(false);
+  console.log("✅ 클라이언트: 모든 조건 충족. 서버 액션 호출 직전!", { point, userId: user.id });
+
+  try {
+    setIsProcessing(true);
+
+    // [중요] 서버 액션 호출
+    const result = await handleCheckIn(point, user.id, user.name || '참가자');
+
+    // 이제 result를 로그로 찍어야 에러가 안 납니다.
+    console.log("📡 서버로부터 응답 받음:", result);
+
+    if (result.success) {
+      // 성공 시: URL 파라미터 제거 및 상태 새로고침
+      window.history.replaceState({}, '', '/rally');
+      await fetchStatus(user.id);
+      alert(result.message);
+    } else {
+      // 실패 시: 에러 원인 알림
+      alert(`⚠️ 인증 실패: ${result.message}`);
+      window.history.replaceState({}, '', '/rally');
     }
+  } catch (err: any) {
+    // 예상치 못한 네트워크/런타임 에러 발생 시
+    console.error("🔥 클라이언트 처리 중 심각한 오류:", err);
+    alert(`시스템 오류가 발생했습니다: ${err.message}`);
+  } finally {
+    setIsProcessing(false);
   }
 };
 

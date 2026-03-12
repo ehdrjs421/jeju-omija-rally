@@ -5,6 +5,8 @@ import { createClient } from '../../utils/supabase/server';
 
 export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: string, userName?: string) {
   // 에러가 나면 여기서 멈추므로 반드시 위 import가 성공해야 합니다.
+  console.log("🔥🔥🔥 [SERVER ACTION EXECUTED] 🔥🔥🔥");
+  console.log("파라미터 확인:", { point, userId, userName });
   const supabase = await createClient(); 
 
   if (!userId) return { success: false, message: '유저 정보가 없습니다.' };
@@ -38,11 +40,20 @@ export async function handleCheckIn(point: 'START' | 'MID' | 'FINISH', userId: s
     }
 
     // 4단계: 스탬프 찍기
-    const { error: sErr } = await supabase.from('stamps').insert({
+    const { error: stampError } = await supabase.from('stamps').insert({
       user_id: userId,
       checkpoint_id: currentPoint
     });
-    if (sErr) throw sErr;
+
+    if (stampError) {
+      // ⚠️ Cloudflare 로그뿐만 아니라, 클라이언트에게도 상세 에러를 보냅니다.
+      console.error("❌ DB 저장 실패:", stampError.message);
+      return { 
+        success: false, 
+        message: `DB 저장 실패: ${stampError.message} (${stampError.details || '상세없음'})` 
+      };
+    }
+    // if (sErr) throw sErr;
 
     // 5단계: 완주 처리
     let isFinish = false;
