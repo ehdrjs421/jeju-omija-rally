@@ -8,47 +8,59 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 export default function ScanPage() {
   const router = useRouter();
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
+  const lastCoords = useRef<{lat: number, lng: number} | null>(null); // 최신 좌표 보관함
   const [status, setStatus] = useState<'loading' | 'scanning' | 'processing' | 'error'>('loading');
   const [message, setMessage] = useState('시스템 준비 중...');
 
   useEffect(() => {
+    let watchId: number;
+
     const initSystem = async () => {
       try {
-        setMessage('GPS 신호를 수신 중입니다...');
+        setMessage('GPS 신호를 잡고 있습니다...');
         
-        // 🚀 [수정] 단순히 권한만 묻는게 아니라, 위치 데이터가 올 때까지 최대 10초 대기
-        const coords = await new Promise<GeolocationCoordinates>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => resolve(pos.coords),
-            (err) => reject(err),
-            { 
-              enableHighAccuracy: true, 
-              timeout: 10000, // 10초 대기
-              maximumAge: 0   // 캐시된 위치 대신 실시간 위치 사용
+        // 🚀 [핵심 수정 1] 위치를 계속 추적(Watch)하여 lastCoords에 실시간 저장
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            lastCoords.current = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude
+            };
+            // 좌표가 처음으로 잡히면 스캐너 시작
+            if (status === 'loading') {
+              startScanner();
             }
-          );
-        });
+          },
+          (err) => {
+            console.error("GPS Watch Error:", err);
+            if (!lastCoords.current) {
+              setStatus('error');
+              setMessage('GPS 신호가 잡히지 않습니다. 위치 권한을 확인하고 탁 트인 곳으로 이동해주세요.');
+            }
+          },
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
 
-        if (coords) {
-          console.log("GPS 수신 성공:", coords.latitude, coords.longitude);
-          startScanner();
-        }
-      } catch (err: any) {
-        console.error("Permission/GPS Error:", err);
+        // 10초 동안 좌표가 안 잡히면 에러 표시
+        setTimeout(() => {
+          if (status === 'loading' && !lastCoords.current) {
+            setStatus('error');
+            setMessage('위치 정보를 가져오는 데 시간이 너무 오래 걸립니다. 다시 시도해주세요.');
+          }
+        }, 10000);
+
+      } catch (err) {
         setStatus('error');
-        if (err.code === 1) {
-          setMessage('위치 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요.');
-        } else if (err.code === 3) {
-          setMessage('GPS 신호가 약합니다. 탁 트인 곳에서 다시 시도해주세요.');
-        } else {
-          setMessage('카메라와 위치 권한이 모두 필요합니다.');
-        }
+        setMessage('시스템 초기화 중 오류가 발생했습니다.');
       }
     };
 
-    const timer = setTimeout(initSystem, 1000); // 1초 여유 준 뒤 시작
-    return () => { stopScanner(); };
-  }, []);
+    initSystem();
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      stopScanner();
+    };
+  }, [status]);
 
   const startScanner = async () => {
     try {
@@ -75,34 +87,27 @@ export default function ScanPage() {
   };
 
   const onScanSuccess = async (decodedText: string) => {
-    // 🚀 중복 실행 방지
     if (status === 'processing') return;
-    
+
+    // 🚀 [핵심 수정 2] 스캔 순간, 이미 잡혀있는 실시간 좌표(lastCoords)를 즉시 사용
+    if (!lastCoords.current) {
+      alert("아직 위치 정보가 수신되지 않았습니다. 잠시만 기다려주세요.");
+      return;
+    }
+
     try { await stopScanner(); } catch (e) {}
     setStatus('processing');
-    setMessage('최종 위치 확인 중...');
+    setMessage('인증 페이지로 이동 중...');
 
-    // 🚀 스캔 직후 위치를 한 번 더 확실히 잡습니다.
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const url = new URL(decodedText, window.location.origin);
-        url.searchParams.set('lat', latitude.toString());
-        url.searchParams.set('lng', longitude.toString());
-        
-        console.log("최종 전송 주소:", url.toString());
-        window.location.href = url.toString();
-      },
-      (err) => {
-        console.error("스캔 후 위치 획득 실패:", err);
-        setStatus('error');
-        setMessage('인증 직전 위치 확인에 실패했습니다. 다시 시도해주세요.');
-      },
-      { enableHighAccuracy: true, timeout: 5000 }
-    );
+    const { lat, lng } = lastCoords.current;
+    const url = new URL(decodedText, window.location.origin);
+    url.searchParams.set('lat', lat.toString());
+    url.searchParams.set('lng', lng.toString());
+    
+    // 이동
+    window.location.href = url.toString();
   };
 
-  // UI 부분은 기존과 동일
   return (
     <main className="min-h-screen bg-black text-white flex flex-col font-sans">
       <div className="p-4 flex items-center gap-4 bg-zinc-900 border-b border-zinc-800">
@@ -115,7 +120,9 @@ export default function ScanPage() {
           {status !== 'scanning' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-30">
               <Loader2 className="animate-spin text-red-500 mb-2" size={32} />
-              <p className="text-xs text-zinc-500 font-bold uppercase tracking-tighter">{status}</p>
+              <p className="text-xs text-zinc-500 font-bold uppercase tracking-tighter">
+                {status === 'loading' ? 'GPS WAITING' : 'PROCESSING'}
+              </p>
             </div>
           )}
         </div>
@@ -126,7 +133,7 @@ export default function ScanPage() {
           {status === 'error' && (
             <button 
               onClick={() => window.location.reload()} 
-              className="mt-6 px-10 py-4 bg-red-600 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-all"
+              className="mt-6 px-10 py-4 bg-red-600 text-white rounded-2xl font-black shadow-lg active:scale-95"
             >
               다시 시도하기
             </button>
