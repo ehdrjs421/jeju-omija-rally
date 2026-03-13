@@ -42,10 +42,18 @@ export default function ScanPage() {
       
       await html5QrCode.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 250, height: 250 } },
+        { 
+          fps: 15, 
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+          // 짧은 쪽의 75%를 정사각형으로
+          const size = Math.min(viewfinderWidth, viewfinderHeight) * 0.75;
+          return { width: size, height: size };
+          }
+        },
         onScanSuccess,
         () => {}
       );
+      
       
       setStatus('scanning');
       setMessage('QR 코드를 스캔해주세요.');
