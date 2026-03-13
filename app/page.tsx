@@ -31,7 +31,7 @@ export default function Home() {
 
     if (!data) {
       setLoading(false);
-      return alert('등록되지 않은 참가자 정보입니다. 본부석에 문의해주세요!');
+      return alert('등록되지 않은 참가자 정보입니다. 운영 부스에 문의해주세요!');
     }
 
     localStorage.setItem('omija_user', JSON.stringify(data));
@@ -49,7 +49,7 @@ export default function Home() {
           />
           <input 
             className="w-full p-4 border rounded-xl outline-none focus:ring-2 focus:ring-red-500 text-black"
-            placeholder="배번 (예: A101)" value={bib} onChange={(e) => setBib(e.target.value)}
+            placeholder="배번 (예: 101)" value={bib} onChange={(e) => setBib(e.target.value)}
           />
           <button 
             onClick={handleLogin} disabled={loading}
