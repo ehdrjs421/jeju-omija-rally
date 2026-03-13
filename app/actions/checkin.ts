@@ -34,11 +34,11 @@ export async function handleCheckIn(
   const currentPoint = point.toUpperCase() as keyof typeof CHECKPOINTS_COORD;
   const currentName = POINT_NAMES[currentPoint];
 
-  // 1️⃣ GPS 거리 검증 (300m)
+  // 1️⃣ GPS 거리 검증 (30m)
   if (userLat && userLng) {
     const target = CHECKPOINTS_COORD[currentPoint];
     const distance = getDistance(userLat, userLng, target.lat, target.lng);
-    if (distance > 300) {
+    if (distance > 30) {
       return { 
         success: false, 
         message: `📍 [${currentName}] 지점과 너무 멉니다. (약 ${Math.round(distance)}m 거리) 해당 장소로 이동해주세요.` 
